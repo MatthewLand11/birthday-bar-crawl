@@ -48,15 +48,17 @@ function initProgress(bars: BarStop[]): AllProgress {
   return { team1: blank(), team2: blank() };
 }
 
-function countDone(tp: Record<string, BarProgress>) {
-  return Object.values(tp).filter((p) => p.departed).length;
+function countDone(tp: Record<string, BarProgress> | undefined) {
+  if (!tp) return 0;
+  return Object.values(tp).filter((p) => p?.departed).length;
 }
 
 /** Returns the id of the first non-departed bar, or "__done__" if all complete. */
 function firstOpenBar(
   bars: BarStop[],
-  tp: Record<string, BarProgress>
+  tp: Record<string, BarProgress> | undefined
 ): string {
+  if (!tp) return bars[0]?.id ?? "__done__";
   for (const b of bars) {
     if (!tp[b.id]?.departed) return b.id;
   }
@@ -254,8 +256,8 @@ function RaceHeader({
   progress: AllProgress;
   totalBars: number;
 }) {
-  const t1 = countDone(progress.team1);
-  const t2 = countDone(progress.team2);
+  const t1 = countDone(progress?.team1);
+  const t2 = countDone(progress?.team2);
   const total = totalBars;
   const winner =
     t1 === total || t2 === total
@@ -337,8 +339,11 @@ function BarCard({
   onReceipt: (f: FileList) => void;
   onDepart: () => void;
 }) {
+  /* Firebase drops empty arrays, so defensively default them */
+  const photos = bp.missionPhotos ?? [];
+  const receipts = bp.receiptPhotos ?? [];
   const done = bp.departed;
-  const canLeave = bp.missionPhotos.length > 0;
+  const canLeave = photos.length > 0;
 
   /* Extract well-known fields */
   const address = getAddress(bar);
@@ -458,8 +463,8 @@ function BarCard({
                 }}
               />
               {"\uD83D\uDCF8"} Mission
-              {bp.missionPhotos.length > 0 &&
-                ` (${bp.missionPhotos.length})`}
+              {photos.length > 0 &&
+                ` (${photos.length})`}
             </label>
             <label className="flex-1 flex items-center justify-center gap-1 bg-white/[0.07] hover:bg-white/[0.12] text-white/50 text-[11px] font-semibold py-2.5 rounded-xl cursor-pointer transition-colors">
               <input
@@ -475,14 +480,14 @@ function BarCard({
                 }}
               />
               {"\uD83E\uDDFE"} Receipt
-              {bp.receiptPhotos.length > 0 &&
-                ` (${bp.receiptPhotos.length})`}
+              {receipts.length > 0 &&
+                ` (${receipts.length})`}
             </label>
           </div>
 
-          {(bp.missionPhotos.length > 0 || bp.receiptPhotos.length > 0) && (
+          {(photos.length > 0 || receipts.length > 0) && (
             <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1 -mx-1 px-1">
-              {bp.missionPhotos.map((u, i) => (
+              {photos.map((u, i) => (
                 <img
                   key={`m${i}`}
                   src={u}
@@ -490,7 +495,7 @@ function BarCard({
                   alt="mission proof"
                 />
               ))}
-              {bp.receiptPhotos.map((u, i) => (
+              {receipts.map((u, i) => (
                 <img
                   key={`r${i}`}
                   src={u}
@@ -527,9 +532,9 @@ function BarCard({
         </>
       )}
 
-      {done && bp.missionPhotos.length > 0 && (
+      {done && photos.length > 0 && (
         <div className="flex gap-1.5 mt-1 overflow-x-auto pb-1">
-          {bp.missionPhotos.map((u, i) => (
+          {photos.map((u, i) => (
             <img
               key={i}
               src={u}
@@ -684,7 +689,7 @@ export default function Home() {
                 }
               >
                 {TEAMS[tid].emoji} {TEAMS[tid].name} (
-                {countDone(progress[tid])}/{bars.length})
+                {countDone(progress?.[tid])}/{bars.length})
               </button>
             ))}
           </div>
@@ -694,14 +699,15 @@ export default function Home() {
               /* Team 1 follows the saved order; Team 2 goes in reverse */
               const teamBars =
                 tab === "team2" ? [...bars].reverse() : bars;
-              const curId = firstOpenBar(teamBars, progress[tab]);
+              const teamProgress = progress?.[tab] ?? {};
+              const curId = firstOpenBar(teamBars, teamProgress);
               const curIdx = teamBars.findIndex((b) => b.id === curId);
               return teamBars.map((bar, i) => (
                 <BarCard
                   key={bar.id}
                   bar={bar}
                   idx={i}
-                  bp={progress[tab][bar.id] ?? { missionPhotos: [], receiptPhotos: [], departed: false }}
+                  bp={teamProgress[bar.id] ?? { missionPhotos: [], receiptPhotos: [], departed: false }}
                   isCurrent={bar.id === curId}
                   isUpcoming={i > curIdx && curId !== "__done__"}
                   teamId={tab}
