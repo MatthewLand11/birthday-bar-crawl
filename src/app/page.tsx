@@ -328,6 +328,7 @@ function BarCard({
   onMission,
   onReceipt,
   onDepart,
+  onUndo,
 }: {
   bar: BarStop;
   idx: number;
@@ -338,6 +339,7 @@ function BarCard({
   onMission: (f: FileList) => void;
   onReceipt: (f: FileList) => void;
   onDepart: () => void;
+  onUndo?: () => void;
 }) {
   /* Firebase drops empty arrays, so defensively default them */
   const photos = bp.missionPhotos ?? [];
@@ -532,16 +534,28 @@ function BarCard({
         </>
       )}
 
-      {done && photos.length > 0 && (
-        <div className="flex gap-1.5 mt-1 overflow-x-auto pb-1">
-          {photos.map((u, i) => (
-            <img
-              key={i}
-              src={u}
-              className="w-10 h-10 rounded-lg object-cover border border-white/10 shrink-0"
-              alt="mission proof"
-            />
-          ))}
+      {done && (
+        <div className="flex items-center gap-2 mt-2">
+          {photos.length > 0 && (
+            <div className="flex gap-1.5 overflow-x-auto pb-1 flex-1">
+              {photos.map((u, i) => (
+                <img
+                  key={i}
+                  src={u}
+                  className="w-10 h-10 rounded-lg object-cover border border-white/10 shrink-0"
+                  alt="mission proof"
+                />
+              ))}
+            </div>
+          )}
+          {onUndo && (
+            <button
+              onClick={onUndo}
+              className="text-white/20 hover:text-white/50 text-[10px] font-medium shrink-0 transition-colors"
+            >
+              Undo
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -657,6 +671,21 @@ export default function Home() {
     });
   };
 
+  const undoDepart = (team: TeamId, barId: string) => {
+    setProgress((prev) => {
+      const tp = { ...prev[team] };
+      tp[barId] = { ...tp[barId], departed: false };
+      return { ...prev, [team]: tp };
+    });
+  };
+
+  const resetRace = () => {
+    if (!window.confirm("Reset all race progress for both teams? Photos will be cleared.")) return;
+    setProgress(initProgress(bars));
+    setPhase("setup");
+    setAssignments({});
+  };
+
   return (
     <div className="max-w-lg mx-auto pb-10">
       <Header />
@@ -714,17 +743,26 @@ export default function Home() {
                   onMission={(f) => upload(tab, bar.id, "mission", f)}
                   onReceipt={(f) => upload(tab, bar.id, "receipt", f)}
                   onDepart={() => depart(tab, bar.id)}
+                  onUndo={() => undoDepart(tab, bar.id)}
                 />
               ));
             })()}
           </section>
 
-          <button
-            onClick={() => setPhase("setup")}
-            className="block mx-auto mt-4 text-white/20 hover:text-white/40 text-xs transition-colors"
-          >
-            {"\u2190"} Edit teams
-          </button>
+          <div className="flex items-center justify-center gap-4 mt-4">
+            <button
+              onClick={() => setPhase("setup")}
+              className="text-white/20 hover:text-white/40 text-xs transition-colors"
+            >
+              {"\u2190"} Edit teams
+            </button>
+            <button
+              onClick={resetRace}
+              className="text-red-400/40 hover:text-red-400 text-xs transition-colors"
+            >
+              Reset race
+            </button>
+          </div>
         </>
       )}
 
