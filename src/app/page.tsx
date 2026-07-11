@@ -91,16 +91,21 @@ function Header() {
 
 function JoinScreen({
   onJoin,
+  onClaim,
+  existingPeople,
   joinedCount,
   loading,
   error,
 }: {
   onJoin: (name: string) => void;
+  onClaim: (person: Person) => void;
+  existingPeople: Person[];
   joinedCount: number;
   loading: boolean;
   error: string | null;
 }) {
   const [name, setName] = useState("");
+  const [showClaim, setShowClaim] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,6 +156,43 @@ function JoinScreen({
           </p>
         )}
       </div>
+
+      {/* Claim existing profile */}
+      {existingPeople.length > 0 && (
+        <div className="mt-4">
+          <button
+            onClick={() => setShowClaim(!showClaim)}
+            className="w-full text-center text-white/30 hover:text-white/50 text-xs font-medium py-2 transition-colors"
+          >
+            {showClaim
+              ? "Hide list"
+              : "Already joined? Tap your name to sign back in"}
+          </button>
+          {showClaim && (
+            <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-4 mt-2">
+              <div className="flex flex-wrap gap-2 justify-center">
+                {existingPeople.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `Sign in as ${p.name}? Only do this if this is you.`
+                        )
+                      ) {
+                        onClaim(p);
+                      }
+                    }}
+                    className="rounded-full px-3 py-1.5 text-xs font-medium bg-white/10 text-white/60 hover:bg-white/20 hover:text-white/80 transition-colors"
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
@@ -767,7 +809,7 @@ export default function Home() {
     initProgress(bars)
   );
 
-  /* ---- Device identity (localStorage only) ---- */
+  /* ---- Device identity (localStorage-persisted) ---- */
   const [myId, setMyId] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
@@ -779,15 +821,6 @@ export default function Home() {
 
   const myPerson = myId ? people.find((p) => p.id === myId) : null;
   const myTeam = (myId ? assignments[myId] : null) as TeamId | null;
-
-  /* Clear stale identity if person was removed from Firebase */
-  useEffect(() => {
-    if (!myId || people.length === 0) return;
-    if (!people.find((p) => p.id === myId)) {
-      localStorage.removeItem(LS_MY_ID);
-      setMyId(null);
-    }
-  }, [myId, people]);
 
   const joinedCount = Object.values(assignments).filter(Boolean).length;
 
@@ -817,6 +850,15 @@ export default function Home() {
   );
   const currentBarName =
     currentBarIdx >= 0 ? teamBarsOrdered[currentBarIdx].name : "";
+
+  /* ================================================================ */
+  /*  Claim handler — returning user signs back in                     */
+  /* ================================================================ */
+
+  const handleClaim = (person: Person) => {
+    localStorage.setItem(LS_MY_ID, person.id);
+    setMyId(person.id);
+  };
 
   /* ================================================================ */
   /*  Join handler — Firebase transactions                             */
@@ -948,7 +990,10 @@ export default function Home() {
   /*  Render                                                           */
   /* ================================================================ */
 
-  const hasJoined = myId && myPerson && myTeam;
+  /* Show joined state if Firebase has the person, OR if we're still loading
+     (myId exists but people is empty = Firebase hasn't responded yet) */
+  const firebaseLoading = myId && people.length === 0;
+  const hasJoined = myId && (firebaseLoading || (myPerson && myTeam));
 
   return (
     <div className="max-w-lg mx-auto pb-10">
@@ -977,6 +1022,8 @@ export default function Home() {
       {!hasJoined && (
         <JoinScreen
           onJoin={handleJoin}
+          onClaim={handleClaim}
+          existingPeople={people}
           joinedCount={joinedCount}
           loading={joining}
           error={joinError}
@@ -984,7 +1031,14 @@ export default function Home() {
       )}
 
       {/* ---- Joined: team assignment + rosters ---- */}
-      {hasJoined && (
+      {hasJoined && firebaseLoading && (
+        <section className="px-5 pb-6 text-center">
+          <div className="bg-white/[0.06] border border-white/10 rounded-2xl p-6">
+            <p className="text-white/40 text-sm animate-pulse">Loading your profile...</p>
+          </div>
+        </section>
+      )}
+      {hasJoined && myPerson && myTeam && (
         <TeamReveal
           person={myPerson}
           teamId={myTeam}
