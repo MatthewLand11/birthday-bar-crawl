@@ -585,7 +585,8 @@ function BarCard({
             <label className="flex-1 flex items-center justify-center gap-1 bg-pink-500/15 hover:bg-pink-500/25 text-pink-300 text-[11px] font-semibold py-2.5 rounded-xl cursor-pointer transition-colors">
               <input
                 type="file"
-                accept="image/*"
+                accept="image/*,video/*"
+                capture="environment"
                 className="hidden"
                 multiple
                 onChange={(e) => {
@@ -601,7 +602,8 @@ function BarCard({
             <label className="flex-1 flex items-center justify-center gap-1 bg-white/[0.07] hover:bg-white/[0.12] text-white/50 text-[11px] font-semibold py-2.5 rounded-xl cursor-pointer transition-colors">
               <input
                 type="file"
-                accept="image/*"
+                accept="image/*,video/*"
+                capture="environment"
                 className="hidden"
                 multiple
                 onChange={(e) => {
@@ -696,7 +698,8 @@ function SharedAlbum({
         <label className="flex items-center gap-1 bg-pink-500/15 hover:bg-pink-500/25 text-pink-300 text-[11px] font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-colors">
           <input
             type="file"
-            accept="image/*"
+            accept="image/*,video/*"
+            capture="environment"
             className="hidden"
             multiple
             onChange={(e) => {
