@@ -44,6 +44,7 @@ export default function AdminPage() {
   /* Race state (read + control) — Firebase is source of truth */
   const [phase, setFbPhase] = useFirebase<Phase>("race/phase", "setup");
   const [assignments, setFbAssignments] = useFirebase<Assignments>("race/assignments", {});
+  const [selectedPerson, setSelectedPerson] = useState<string | null>(null);
 
   /* Seed local state on initial load — from Firebase if available, else localStorage */
   const hasSynced = useRef(false);
@@ -456,25 +457,46 @@ export default function AdminPage() {
       </section>
 
       {/* ============================================================ */}
-      {/*  TEAM ASSIGNMENTS (read-only view)                            */}
+      {/*  TEAM ASSIGNMENTS (tap to assign/move)                        */}
       {/* ============================================================ */}
       <section className="mb-8">
         <h2 className="text-white font-semibold text-sm mb-3 flex items-center gap-2">
           {"🏁"} Team Assignments
         </h2>
+        <p className="text-white/30 text-xs mb-3">
+          Tap a name, then tap a team to assign or move them.
+        </p>
         {(() => {
           const team1 = people.filter((p) => assignments[p.id] === "team1");
           const team2 = people.filter((p) => assignments[p.id] === "team2");
           const unassigned = people.filter((p) => !assignments[p.id]);
+
+          const assign = async (personId: string, team: TeamId | null) => {
+            const next = { ...assignments, [personId]: team };
+            if (team === null) {
+              delete next[personId];
+            }
+            try {
+              await setFbAssignments(next);
+            } catch { /* ignore */ }
+            setSelectedPerson(null);
+          };
+
           return (
             <div className="space-y-3">
+              {/* Team drop zones */}
               {(["team1", "team2"] as TeamId[]).map((tid) => {
                 const members = tid === "team1" ? team1 : team2;
                 const team = TEAMS[tid];
                 return (
                   <div
                     key={tid}
-                    className="rounded-xl border p-3"
+                    onClick={() => {
+                      if (selectedPerson) assign(selectedPerson, tid);
+                    }}
+                    className={`rounded-xl border p-3 transition-all ${
+                      selectedPerson ? "cursor-pointer ring-1 ring-white/20" : ""
+                    }`}
                     style={{
                       borderColor: team.color + "30",
                       backgroundColor: team.color + "08",
@@ -487,35 +509,77 @@ export default function AdminPage() {
                       {team.emoji} {team.name} ({members.length})
                     </p>
                     {members.length === 0 ? (
-                      <p className="text-white/20 text-xs">No one yet</p>
+                      <p className="text-white/20 text-xs">
+                        {selectedPerson ? "Tap here to assign" : "No one yet"}
+                      </p>
                     ) : (
                       <div className="flex flex-wrap gap-1.5">
                         {members.map((p) => (
-                          <span
+                          <button
                             key={p.id}
-                            className="inline-block rounded-full px-2.5 py-1 text-xs font-medium bg-white/10 text-white/60"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedPerson(
+                                selectedPerson === p.id ? null : p.id
+                              );
+                            }}
+                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-all ${
+                              selectedPerson === p.id
+                                ? "bg-pink-500/30 text-white ring-2 ring-pink-400/40 scale-105"
+                                : "bg-white/10 text-white/60 hover:bg-white/15"
+                            }`}
                           >
                             {p.name}
-                          </span>
+                            {selectedPerson === p.id && (
+                              <span
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  assign(p.id, null);
+                                }}
+                                className="text-white/30 hover:text-red-400 ml-0.5"
+                              >
+                                {"×"}
+                              </span>
+                            )}
+                          </button>
                         ))}
                       </div>
                     )}
                   </div>
                 );
               })}
+
+              {/* Unassigned pool */}
               {unassigned.length > 0 && (
-                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <div
+                  onClick={() => {
+                    if (selectedPerson) assign(selectedPerson, null);
+                  }}
+                  className={`rounded-xl border border-white/10 bg-white/[0.03] p-3 transition-all ${
+                    selectedPerson ? "cursor-pointer ring-1 ring-white/20" : ""
+                  }`}
+                >
                   <p className="text-white/30 text-[11px] font-bold uppercase tracking-wider mb-2">
                     Not on a team ({unassigned.length})
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {unassigned.map((p) => (
-                      <span
+                      <button
                         key={p.id}
-                        className="inline-block rounded-full px-2.5 py-1 text-xs font-medium bg-white/10 text-white/30"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedPerson(
+                            selectedPerson === p.id ? null : p.id
+                          );
+                        }}
+                        className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium transition-all ${
+                          selectedPerson === p.id
+                            ? "bg-pink-500/30 text-white ring-2 ring-pink-400/40 scale-105"
+                            : "bg-white/10 text-white/30 hover:bg-white/15"
+                        }`}
                       >
                         {p.name}
-                      </span>
+                      </button>
                     ))}
                   </div>
                 </div>
