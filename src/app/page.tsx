@@ -247,122 +247,67 @@ function TeamReveal({
 }
 
 /* ================================================================== */
-/*  ROUTE MAP                                                          */
+/*  ROUTE VISUAL (inline map-like timeline of all stops)               */
 /* ================================================================== */
 
-function RouteMap({ bars }: { bars: BarStop[] }) {
+function RouteVisual({ bars }: { bars: BarStop[] }) {
   const addresses = bars
     .map((b) => getAddress(b))
     .filter(Boolean) as string[];
-  if (addresses.length === 0) return null;
 
-  const origin = encodeURIComponent(addresses[0] + ", New York, NY");
-  const dest = encodeURIComponent(
-    addresses[addresses.length - 1] + ", New York, NY"
-  );
-  const waypoints = addresses
-    .slice(1, -1)
-    .map((a) => encodeURIComponent(a + ", New York, NY"))
-    .join("|");
-
-  const url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}${
-    waypoints ? `&waypoints=${waypoints}` : ""
-  }&travelmode=walking`;
+  const mapsUrl =
+    addresses.length >= 2
+      ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(
+          addresses[0] + ", New York, NY"
+        )}&destination=${encodeURIComponent(
+          addresses[addresses.length - 1] + ", New York, NY"
+        )}${
+          addresses.length > 2
+            ? `&waypoints=${addresses
+                .slice(1, -1)
+                .map((a) => encodeURIComponent(a + ", New York, NY"))
+                .join("|")}`
+            : ""
+        }&travelmode=walking`
+      : null;
 
   return (
     <section className="px-5 pb-4">
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex items-center justify-center gap-2 w-full py-3 rounded-2xl bg-white/[0.06] border border-white/10 hover:bg-white/[0.1] transition-colors"
-      >
-        <span className="text-lg">{"🗺️"}</span>
-        <span className="text-white/70 text-sm font-semibold">
-          View Full Route Map
-        </span>
-        <span className="text-white/30 text-xs">
-          {bars.length} stops · walking
-        </span>
-      </a>
-    </section>
-  );
-}
-
-/* ================================================================== */
-/*  BAR STOP INFO (read-only, for pre-race or overview)                */
-/* ================================================================== */
-
-function BarInfo({ bar, idx }: { bar: BarStop; idx: number }) {
-  const address = getAddress(bar);
-  const time = getTime(bar);
-  const mission = getMission(bar);
-  const extras = getExtraFields(bar);
-  const mapUrl = address
-    ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
-        address + ", New York, NY"
-      )}`
-    : null;
-
-  return (
-    <div className="rounded-2xl p-4 mb-3 bg-white/[0.04] border border-white/[0.08]">
-      <div className="flex items-start justify-between mb-2">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-lg">{bar.icon}</span>
-            <h3 className="text-white font-semibold text-[15px]">
-              {bar.name}
-            </h3>
-          </div>
-          <div className="flex items-center gap-2 mt-0.5">
-            {address && (
-              <p className="text-white/35 text-xs">{address}</p>
-            )}
-            {time && (
-              <p className="text-white/25 text-xs">~{time}</p>
-            )}
-          </div>
-        </div>
-        <span className="text-xl font-bold text-white/[0.07] shrink-0">
-          {idx + 1}
-        </span>
-      </div>
-
-      {mission && (
-        <div className="bg-pink-500/10 border border-pink-500/15 rounded-xl p-3 mb-2">
-          <p className="text-pink-300/80 text-[10px] font-bold uppercase tracking-widest mb-1">
-            Mission
-          </p>
-          <p className="text-white/75 text-[13px] leading-relaxed">
-            {mission}
-          </p>
-        </div>
-      )}
-
-      {extras.length > 0 && (
-        <div className="space-y-1 mb-2">
-          {extras.map((f) => (
-            <p key={f.id} className="text-white/60 text-[13px]">
-              <span className="text-white/30 text-[11px] font-semibold uppercase tracking-wider">
-                {f.label}:
-              </span>{" "}
-              {f.value}
-            </p>
+      <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-4 overflow-x-auto">
+        <p className="text-white/30 text-[10px] font-bold uppercase tracking-wider mb-3">
+          {"🗺️"} Route — {bars.length} stops
+        </p>
+        <div className="flex items-center gap-0 min-w-max pb-1">
+          {bars.map((bar, i) => (
+            <div key={bar.id} className="flex items-center">
+              <div className="flex flex-col items-center w-14">
+                <div className="w-9 h-9 rounded-full bg-pink-500/20 border border-pink-500/30 flex items-center justify-center text-base">
+                  {bar.icon}
+                </div>
+                <p className="text-white/50 text-[9px] font-medium mt-1 text-center leading-tight truncate w-full">
+                  {bar.name}
+                </p>
+              </div>
+              {i < bars.length - 1 && (
+                <div className="flex items-center h-9 mx-0.5">
+                  <div className="w-4 border-t border-dashed border-white/15" />
+                </div>
+              )}
+            </div>
           ))}
         </div>
-      )}
-
-      {mapUrl && (
-        <a
-          href={mapUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 bg-white/[0.06] hover:bg-white/[0.1] text-white/40 text-[11px] font-medium px-3 py-1.5 rounded-lg transition-colors"
-        >
-          {"📍"} Directions
-        </a>
-      )}
-    </div>
+        {mapsUrl && (
+          <a
+            href={mapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-3 flex items-center justify-center gap-1.5 w-full py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-white/40 text-[11px] font-medium transition-colors"
+          >
+            {"📍"} Open walking directions in Google Maps
+          </a>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -446,6 +391,9 @@ function BarCard({
   isCurrent,
   isUpcoming,
   teamId,
+  missionLocked,
+  currentBarName,
+  otherTeamPhotos,
   onMission,
   onReceipt,
   onDepart,
@@ -457,6 +405,9 @@ function BarCard({
   isCurrent: boolean;
   isUpcoming: boolean;
   teamId: TeamId;
+  missionLocked?: boolean;
+  currentBarName?: string;
+  otherTeamPhotos?: string[];
   onMission: (f: FileList) => void;
   onReceipt: (f: FileList) => void;
   onDepart: () => void;
@@ -464,12 +415,13 @@ function BarCard({
 }) {
   const photos = bp.missionPhotos ?? [];
   const receipts = bp.receiptPhotos ?? [];
+  const otherPhotos = otherTeamPhotos ?? [];
   const done = bp.departed;
   const canLeave = photos.length > 0;
 
   const address = getAddress(bar);
   const time = getTime(bar);
-  const mission = getMission(bar);
+  const mission = missionLocked ? null : getMission(bar);
   const extras = getExtraFields(bar);
 
   const mapUrl = address
@@ -548,6 +500,18 @@ function BarCard({
         </div>
       )}
 
+      {missionLocked && (
+        <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 mb-3 text-center">
+          <p className="text-white/25 text-[13px]">
+            {"🔒"} Complete the mission at{" "}
+            <span className="text-white/40 font-semibold">
+              {currentBarName}
+            </span>{" "}
+            to reveal
+          </p>
+        </div>
+      )}
+
       {extras.length > 0 && (
         <div className="space-y-1 mb-3">
           {extras.map((f) => (
@@ -598,7 +562,7 @@ function BarCard({
             </label>
           </div>
 
-          {(photos.length > 0 || receipts.length > 0) && (
+          {(photos.length > 0 || receipts.length > 0 || otherPhotos.length > 0) && (
             <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1 -mx-1 px-1">
               {photos.map((u, i) => (
                 <img
@@ -606,6 +570,14 @@ function BarCard({
                   src={u}
                   className="w-14 h-14 rounded-lg object-cover border-2 border-pink-500/30 shrink-0"
                   alt="mission proof"
+                />
+              ))}
+              {otherPhotos.map((u, i) => (
+                <img
+                  key={`o${i}`}
+                  src={u}
+                  className="w-14 h-14 rounded-lg object-cover border-2 border-purple-500/30 shrink-0 opacity-70"
+                  alt="other team"
                 />
               ))}
               {receipts.map((u, i) => (
@@ -670,6 +642,61 @@ function BarCard({
         </div>
       )}
     </div>
+  );
+}
+
+/* ================================================================== */
+/*  SHARED ALBUM                                                       */
+/* ================================================================== */
+
+function SharedAlbum({
+  albumPhotos,
+  onUpload,
+  uploading,
+}: {
+  albumPhotos: string[];
+  onUpload: (files: FileList) => void;
+  uploading: boolean;
+}) {
+  return (
+    <section className="mx-5 mt-4 mb-4 bg-white/[0.05] border border-white/[0.08] rounded-2xl p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-white/70 font-semibold text-xs uppercase tracking-wider">
+          {"📸"} Shared Album
+        </h2>
+        <label className="flex items-center gap-1 bg-pink-500/15 hover:bg-pink-500/25 text-pink-300 text-[11px] font-semibold px-3 py-1.5 rounded-lg cursor-pointer transition-colors">
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            multiple
+            onChange={(e) => {
+              if (e.target.files?.length) {
+                onUpload(e.target.files);
+                e.target.value = "";
+              }
+            }}
+          />
+          {uploading ? "Uploading..." : "+ Add Photo"}
+        </label>
+      </div>
+      {albumPhotos.length === 0 ? (
+        <p className="text-white/20 text-xs text-center py-3">
+          No photos yet — be the first to share one!
+        </p>
+      ) : (
+        <div className="grid grid-cols-3 gap-1.5">
+          {albumPhotos.map((url, i) => (
+            <img
+              key={i}
+              src={url}
+              className="w-full aspect-square rounded-lg object-cover border border-white/10"
+              alt="shared photo"
+            />
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -742,9 +769,24 @@ export default function Home() {
   const [tab, setTab] = useState<TeamId>("team1");
   const [uploading, setUploading] = useState(false);
 
+  /* ---- Shared album ---- */
+  const [albumPhotos, setAlbumPhotos] = useFirebase<string[]>("album/photos", []);
+  const [albumUploading, setAlbumUploading] = useState(false);
+
   useEffect(() => {
     if (myTeam) setTab(myTeam);
   }, [myTeam]);
+
+  /* ---- Determine which bars have locked missions ---- */
+  const otherTeamId: TeamId = myTeam === "team1" ? "team2" : "team1";
+  const teamBarsOrdered = myTeam === "team2" ? [...bars].reverse() : bars;
+  const myProgress = progress?.[myTeam ?? "team1"] ?? {};
+  const otherProgress = progress?.[otherTeamId] ?? {};
+  const currentBarIdx = teamBarsOrdered.findIndex(
+    (b) => !myProgress[b.id]?.departed
+  );
+  const currentBarName =
+    currentBarIdx >= 0 ? teamBarsOrdered[currentBarIdx].name : "";
 
   /* ================================================================ */
   /*  Join handler — Firebase transactions                             */
@@ -820,6 +862,20 @@ export default function Home() {
     }
   };
 
+  const uploadToAlbum = async (files: FileList) => {
+    setAlbumUploading(true);
+    try {
+      const urls: string[] = [];
+      for (const file of Array.from(files)) {
+        const url = await uploadPhoto(file, "photos/album");
+        urls.push(url);
+      }
+      await setAlbumPhotos([...(albumPhotos || []), ...urls]);
+    } finally {
+      setAlbumUploading(false);
+    }
+  };
+
   const depart = (team: TeamId, barId: string) => {
     setProgress((prev) => {
       const tp = { ...prev[team] };
@@ -866,85 +922,97 @@ export default function Home() {
         />
       )}
 
-      {/* ---- Route map (always visible after joining) ---- */}
-      {hasJoined && <RouteMap bars={bars} />}
+      {/* ---- Route visual (always visible after joining) ---- */}
+      {hasJoined && <RouteVisual bars={teamBarsOrdered} />}
 
-      {/* ---- Race progress (both teams, when race is active) ---- */}
-      {hasJoined && phase === "race" && (
+      {/* ---- Race progress (both teams) ---- */}
+      {hasJoined && (
         <RaceHeader progress={progress} totalBars={bars.length} />
       )}
 
-      {/* ---- Bar stops: interactive during race, info-only before ---- */}
-      {hasJoined && phase === "race" && (
-        <>
-          <div className="flex mx-5 mb-4 bg-white/[0.05] rounded-full p-1">
-            {(["team1", "team2"] as TeamId[]).map((tid) => (
-              <button
-                key={tid}
-                onClick={() => setTab(tid)}
-                className={`flex-1 py-2 rounded-full text-[11px] font-bold uppercase tracking-wider transition-all ${
-                  tab === tid ? "text-white shadow-md" : "text-white/35"
-                }`}
-                style={
-                  tab === tid
-                    ? { backgroundColor: TEAMS[tid].color }
-                    : {}
-                }
-              >
-                {TEAMS[tid].emoji} {TEAMS[tid].name} (
-                {countDone(progress?.[tid])}/{bars.length})
-              </button>
-            ))}
-          </div>
+      {/* ---- Team tabs ---- */}
+      {hasJoined && (
+        <div className="flex mx-5 mb-4 bg-white/[0.05] rounded-full p-1">
+          {(["team1", "team2"] as TeamId[]).map((tid) => (
+            <button
+              key={tid}
+              onClick={() => setTab(tid)}
+              className={`flex-1 py-2 rounded-full text-[11px] font-bold uppercase tracking-wider transition-all ${
+                tab === tid ? "text-white shadow-md" : "text-white/35"
+              }`}
+              style={
+                tab === tid
+                  ? { backgroundColor: TEAMS[tid].color }
+                  : {}
+              }
+            >
+              {TEAMS[tid].emoji} {TEAMS[tid].name} (
+              {countDone(progress?.[tid])}/{bars.length})
+            </button>
+          ))}
+        </div>
+      )}
 
-          <section className="px-5">
-            {(() => {
-              const teamBars =
-                tab === "team2" ? [...bars].reverse() : bars;
-              const teamProgress = progress?.[tab] ?? {};
-              const curId = firstOpenBar(teamBars, teamProgress);
-              const curIdx = teamBars.findIndex((b) => b.id === curId);
-              return teamBars.map((bar, i) => (
+      {/* ---- Bar cards with progressive mission reveal ---- */}
+      {hasJoined && (
+        <section className="px-5">
+          {(() => {
+            const viewBars =
+              tab === "team2" ? [...bars].reverse() : bars;
+            const viewProgress = progress?.[tab] ?? {};
+            const viewOtherProgress =
+              progress?.[tab === "team1" ? "team2" : "team1"] ?? {};
+            const curId = firstOpenBar(viewBars, viewProgress);
+            const curIdx = viewBars.findIndex((b) => b.id === curId);
+            const curName =
+              curIdx >= 0 ? viewBars[curIdx].name : "";
+            return viewBars.map((bar, i) => {
+              const isDone = viewProgress[bar.id]?.departed;
+              const isCur = bar.id === curId;
+              const isLocked = !isDone && !isCur && curId !== "__done__";
+              return (
                 <BarCard
                   key={bar.id}
                   bar={bar}
                   idx={i}
                   bp={
-                    teamProgress[bar.id] ?? {
+                    viewProgress[bar.id] ?? {
                       missionPhotos: [],
                       receiptPhotos: [],
                       departed: false,
                     }
                   }
-                  isCurrent={bar.id === curId}
-                  isUpcoming={i > curIdx && curId !== "__done__"}
+                  isCurrent={isCur}
+                  isUpcoming={false}
                   teamId={tab}
+                  missionLocked={isLocked}
+                  currentBarName={curName}
+                  otherTeamPhotos={
+                    viewOtherProgress[bar.id]?.missionPhotos ?? []
+                  }
                   onMission={(f) => upload(tab, bar.id, "mission", f)}
                   onReceipt={(f) => upload(tab, bar.id, "receipt", f)}
                   onDepart={() => depart(tab, bar.id)}
                   onUndo={() => undoDepart(tab, bar.id)}
                 />
-              ));
-            })()}
-          </section>
-        </>
+              );
+            });
+          })()}
+        </section>
       )}
 
-      {/* ---- Bar info (read-only, before race starts) ---- */}
-      {hasJoined && phase !== "race" && (
-        <section className="px-5 pb-2">
-          <h2 className="text-white/50 text-[11px] font-bold uppercase tracking-wider mb-3">
-            {"🍻"} The Route — {bars.length} Stops
-          </h2>
-          {bars.map((bar, i) => (
-            <BarInfo key={bar.id} bar={bar} idx={i} />
-          ))}
-        </section>
+      {/* ---- Shared photo album ---- */}
+      {hasJoined && (
+        <SharedAlbum
+          albumPhotos={albumPhotos ?? []}
+          onUpload={uploadToAlbum}
+          uploading={albumUploading}
+        />
       )}
 
       <NotesSection notes={notes} />
 
-      {uploading && (
+      {(uploading || albumUploading) && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 bg-pink-500 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg z-50 animate-pulse">
           Uploading...
         </div>
