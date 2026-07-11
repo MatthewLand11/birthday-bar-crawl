@@ -586,7 +586,6 @@ function BarCard({
               <input
                 type="file"
                 accept="image/*,video/*"
-                capture="environment"
                 className="hidden"
                 multiple
                 onChange={(e) => {
@@ -603,7 +602,6 @@ function BarCard({
               <input
                 type="file"
                 accept="image/*,video/*"
-                capture="environment"
                 className="hidden"
                 multiple
                 onChange={(e) => {
