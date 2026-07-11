@@ -162,57 +162,207 @@ function JoinScreen({
 function TeamReveal({
   person,
   teamId,
-  teamMembers,
-  raceActive,
+  allPeople,
+  assignments,
 }: {
   person: Person;
   teamId: TeamId;
-  teamMembers: Person[];
-  raceActive: boolean;
+  allPeople: Person[];
+  assignments: Assignments;
 }) {
   const team = TEAMS[teamId];
+  const otherTeamId: TeamId = teamId === "team1" ? "team2" : "team1";
+  const otherTeam = TEAMS[otherTeamId];
+  const myMembers = allPeople.filter((p) => assignments[p.id] === teamId);
+  const otherMembers = allPeople.filter(
+    (p) => assignments[p.id] === otherTeamId
+  );
 
   return (
-    <section className="px-5 pb-6">
+    <section className="px-5 pb-4">
+      {/* Your team banner */}
       <div
-        className="rounded-2xl p-6 text-center border-2"
+        className="rounded-2xl p-5 text-center border-2 mb-4"
         style={{
           borderColor: team.color + "40",
           backgroundColor: team.color + "10",
         }}
       >
-        <p className="text-5xl mb-3">{team.emoji}</p>
-        <h2 className="text-white font-bold text-xl mb-1">
+        <p className="text-4xl mb-2">{team.emoji}</p>
+        <h2 className="text-white font-bold text-xl">
           {person.name}, you&apos;re on{" "}
           <span style={{ color: team.color }}>{team.name}</span>!
         </h2>
-        <p className="text-white/40 text-sm mt-2">
-          {raceActive
-            ? "The race is on! Scroll down to see your progress."
-            : "Hang tight — the race will start soon."}
-        </p>
+      </div>
 
-        {teamMembers.length > 1 && (
-          <div className="mt-4 pt-4 border-t border-white/10">
-            <p className="text-white/30 text-[11px] font-bold uppercase tracking-wider mb-2">
-              Your teammates
-            </p>
-            <div className="flex flex-wrap justify-center gap-1.5">
-              {teamMembers
-                .filter((m) => m.id !== person.id)
-                .map((m) => (
+      {/* Both team rosters side by side */}
+      <div className="flex gap-3 mb-4">
+        {([teamId, otherTeamId] as TeamId[]).map((tid) => {
+          const t = TEAMS[tid];
+          const members = tid === teamId ? myMembers : otherMembers;
+          const isMyTeam = tid === teamId;
+          return (
+            <div
+              key={tid}
+              className={`flex-1 rounded-xl border p-3 ${
+                isMyTeam ? "border-2" : ""
+              }`}
+              style={{
+                borderColor: t.color + (isMyTeam ? "50" : "25"),
+                backgroundColor: t.color + "08",
+              }}
+            >
+              <p
+                className="text-[10px] font-bold uppercase tracking-wider mb-2"
+                style={{ color: t.color }}
+              >
+                {t.emoji} {t.name} ({members.length})
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {members.map((m) => (
                   <span
                     key={m.id}
-                    className="inline-block rounded-full px-3 py-1 text-xs font-medium bg-white/10 text-white/60"
+                    className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                      m.id === person.id
+                        ? "bg-white/20 text-white"
+                        : "bg-white/8 text-white/50"
+                    }`}
                   >
                     {m.name}
+                    {m.id === person.id ? " ★" : ""}
                   </span>
                 ))}
+                {members.length === 0 && (
+                  <span className="text-white/20 text-[11px]">
+                    No one yet
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })}
       </div>
     </section>
+  );
+}
+
+/* ================================================================== */
+/*  ROUTE MAP                                                          */
+/* ================================================================== */
+
+function RouteMap({ bars }: { bars: BarStop[] }) {
+  const addresses = bars
+    .map((b) => getAddress(b))
+    .filter(Boolean) as string[];
+  if (addresses.length === 0) return null;
+
+  const origin = encodeURIComponent(addresses[0] + ", New York, NY");
+  const dest = encodeURIComponent(
+    addresses[addresses.length - 1] + ", New York, NY"
+  );
+  const waypoints = addresses
+    .slice(1, -1)
+    .map((a) => encodeURIComponent(a + ", New York, NY"))
+    .join("|");
+
+  const url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}${
+    waypoints ? `&waypoints=${waypoints}` : ""
+  }&travelmode=walking`;
+
+  return (
+    <section className="px-5 pb-4">
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center justify-center gap-2 w-full py-3 rounded-2xl bg-white/[0.06] border border-white/10 hover:bg-white/[0.1] transition-colors"
+      >
+        <span className="text-lg">{"🗺️"}</span>
+        <span className="text-white/70 text-sm font-semibold">
+          View Full Route Map
+        </span>
+        <span className="text-white/30 text-xs">
+          {bars.length} stops · walking
+        </span>
+      </a>
+    </section>
+  );
+}
+
+/* ================================================================== */
+/*  BAR STOP INFO (read-only, for pre-race or overview)                */
+/* ================================================================== */
+
+function BarInfo({ bar, idx }: { bar: BarStop; idx: number }) {
+  const address = getAddress(bar);
+  const time = getTime(bar);
+  const mission = getMission(bar);
+  const extras = getExtraFields(bar);
+  const mapUrl = address
+    ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
+        address + ", New York, NY"
+      )}`
+    : null;
+
+  return (
+    <div className="rounded-2xl p-4 mb-3 bg-white/[0.04] border border-white/[0.08]">
+      <div className="flex items-start justify-between mb-2">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-lg">{bar.icon}</span>
+            <h3 className="text-white font-semibold text-[15px]">
+              {bar.name}
+            </h3>
+          </div>
+          <div className="flex items-center gap-2 mt-0.5">
+            {address && (
+              <p className="text-white/35 text-xs">{address}</p>
+            )}
+            {time && (
+              <p className="text-white/25 text-xs">~{time}</p>
+            )}
+          </div>
+        </div>
+        <span className="text-xl font-bold text-white/[0.07] shrink-0">
+          {idx + 1}
+        </span>
+      </div>
+
+      {mission && (
+        <div className="bg-pink-500/10 border border-pink-500/15 rounded-xl p-3 mb-2">
+          <p className="text-pink-300/80 text-[10px] font-bold uppercase tracking-widest mb-1">
+            Mission
+          </p>
+          <p className="text-white/75 text-[13px] leading-relaxed">
+            {mission}
+          </p>
+        </div>
+      )}
+
+      {extras.length > 0 && (
+        <div className="space-y-1 mb-2">
+          {extras.map((f) => (
+            <p key={f.id} className="text-white/60 text-[13px]">
+              <span className="text-white/30 text-[11px] font-semibold uppercase tracking-wider">
+                {f.label}:
+              </span>{" "}
+              {f.value}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {mapUrl && (
+        <a
+          href={mapUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 bg-white/[0.06] hover:bg-white/[0.1] text-white/40 text-[11px] font-medium px-3 py-1.5 rounded-lg transition-colors"
+        >
+          {"📍"} Directions
+        </a>
+      )}
+    </div>
   );
 }
 
@@ -706,21 +856,27 @@ export default function Home() {
         />
       )}
 
-      {/* ---- Joined: show team assignment ---- */}
+      {/* ---- Joined: team assignment + rosters ---- */}
       {hasJoined && (
         <TeamReveal
           person={myPerson}
           teamId={myTeam}
-          teamMembers={myTeamMembers}
-          raceActive={phase === "race"}
+          allPeople={people}
+          assignments={assignments}
         />
       )}
 
-      {/* ---- Race view (only when joined AND race is active) ---- */}
+      {/* ---- Route map (always visible after joining) ---- */}
+      {hasJoined && <RouteMap bars={bars} />}
+
+      {/* ---- Race progress (both teams, when race is active) ---- */}
+      {hasJoined && phase === "race" && (
+        <RaceHeader progress={progress} totalBars={bars.length} />
+      )}
+
+      {/* ---- Bar stops: interactive during race, info-only before ---- */}
       {hasJoined && phase === "race" && (
         <>
-          <RaceHeader progress={progress} totalBars={bars.length} />
-
           <div className="flex mx-5 mb-4 bg-white/[0.05] rounded-full p-1">
             {(["team1", "team2"] as TeamId[]).map((tid) => (
               <button
@@ -772,6 +928,18 @@ export default function Home() {
             })()}
           </section>
         </>
+      )}
+
+      {/* ---- Bar info (read-only, before race starts) ---- */}
+      {hasJoined && phase !== "race" && (
+        <section className="px-5 pb-2">
+          <h2 className="text-white/50 text-[11px] font-bold uppercase tracking-wider mb-3">
+            {"🍻"} The Route — {bars.length} Stops
+          </h2>
+          {bars.map((bar, i) => (
+            <BarInfo key={bar.id} bar={bar} idx={i} />
+          ))}
+        </section>
       )}
 
       <NotesSection notes={notes} />
