@@ -394,10 +394,12 @@ function BarCard({
   missionLocked,
   currentBarName,
   otherTeamPhotos,
+  isMyTeam,
   onMission,
   onReceipt,
   onDepart,
   onUndo,
+  onDeletePhoto,
 }: {
   bar: BarStop;
   idx: number;
@@ -408,10 +410,12 @@ function BarCard({
   missionLocked?: boolean;
   currentBarName?: string;
   otherTeamPhotos?: string[];
+  isMyTeam: boolean;
   onMission: (f: FileList) => void;
   onReceipt: (f: FileList) => void;
   onDepart: () => void;
   onUndo?: () => void;
+  onDeletePhoto?: (type: "mission" | "receipt", index: number) => void;
 }) {
   const photos = bp.missionPhotos ?? [];
   const receipts = bp.receiptPhotos ?? [];
@@ -525,7 +529,57 @@ function BarCard({
         </div>
       )}
 
-      {!done && (
+      {/* Photo thumbnails (visible to everyone, delete only for own team) */}
+      {(photos.length > 0 || receipts.length > 0 || otherPhotos.length > 0) && (
+        <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1 -mx-1 px-1">
+          {photos.map((u, i) => (
+            <div key={`m${i}`} className="relative shrink-0">
+              <img
+                src={u}
+                className="w-14 h-14 rounded-lg object-cover border-2 border-pink-500/30"
+                alt="mission proof"
+              />
+              {isMyTeam && onDeletePhoto && (
+                <button
+                  onClick={() => onDeletePhoto("mission", i)}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] leading-none flex items-center justify-center shadow-md"
+                >
+                  {"×"}
+                </button>
+              )}
+            </div>
+          ))}
+          {otherPhotos.map((u, i) => (
+            <div key={`o${i}`} className="shrink-0">
+              <img
+                src={u}
+                className="w-14 h-14 rounded-lg object-cover border-2 border-purple-500/30 opacity-70"
+                alt="other team"
+              />
+            </div>
+          ))}
+          {receipts.map((u, i) => (
+            <div key={`r${i}`} className="relative shrink-0">
+              <img
+                src={u}
+                className="w-14 h-14 rounded-lg object-cover border border-white/15"
+                alt="receipt"
+              />
+              {isMyTeam && onDeletePhoto && (
+                <button
+                  onClick={() => onDeletePhoto("receipt", i)}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] leading-none flex items-center justify-center shadow-md"
+                >
+                  {"×"}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Upload + controls (own team only) */}
+      {!done && isMyTeam && (
         <>
           <div className="flex gap-2 mb-3">
             <label className="flex-1 flex items-center justify-center gap-1 bg-pink-500/15 hover:bg-pink-500/25 text-pink-300 text-[11px] font-semibold py-2.5 rounded-xl cursor-pointer transition-colors">
@@ -541,7 +595,7 @@ function BarCard({
                   }
                 }}
               />
-              {"📸"} Mission
+              {"📸"} Add Photos
               {photos.length > 0 && ` (${photos.length})`}
             </label>
             <label className="flex-1 flex items-center justify-center gap-1 bg-white/[0.07] hover:bg-white/[0.12] text-white/50 text-[11px] font-semibold py-2.5 rounded-xl cursor-pointer transition-colors">
@@ -561,35 +615,6 @@ function BarCard({
               {receipts.length > 0 && ` (${receipts.length})`}
             </label>
           </div>
-
-          {(photos.length > 0 || receipts.length > 0 || otherPhotos.length > 0) && (
-            <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1 -mx-1 px-1">
-              {photos.map((u, i) => (
-                <img
-                  key={`m${i}`}
-                  src={u}
-                  className="w-14 h-14 rounded-lg object-cover border-2 border-pink-500/30 shrink-0"
-                  alt="mission proof"
-                />
-              ))}
-              {otherPhotos.map((u, i) => (
-                <img
-                  key={`o${i}`}
-                  src={u}
-                  className="w-14 h-14 rounded-lg object-cover border-2 border-purple-500/30 shrink-0 opacity-70"
-                  alt="other team"
-                />
-              ))}
-              {receipts.map((u, i) => (
-                <img
-                  key={`r${i}`}
-                  src={u}
-                  className="w-14 h-14 rounded-lg object-cover border border-white/15 shrink-0"
-                  alt="receipt"
-                />
-              ))}
-            </div>
-          )}
 
           <div className="flex gap-2">
             {mapUrl && (
@@ -611,27 +636,31 @@ function BarCard({
                   : "bg-white/[0.05] text-white/20 cursor-not-allowed"
               }`}
             >
-              {canLeave ? "✓ Left this bar" : "Upload photo first"}
+              {canLeave ? "✓ Mission Complete" : "Upload photo first"}
             </button>
           </div>
         </>
       )}
 
+      {/* Directions link for other team's view */}
+      {!done && !isMyTeam && mapUrl && (
+        <a
+          href={mapUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 bg-white/[0.06] hover:bg-white/[0.1] text-white/40 text-[11px] font-medium px-3 py-1.5 rounded-lg transition-colors"
+        >
+          {"📍"} Directions
+        </a>
+      )}
+
       {done && (
         <div className="flex items-center gap-2 mt-2">
-          {photos.length > 0 && (
-            <div className="flex gap-1.5 overflow-x-auto pb-1 flex-1">
-              {photos.map((u, i) => (
-                <img
-                  key={i}
-                  src={u}
-                  className="w-10 h-10 rounded-lg object-cover border border-white/10 shrink-0"
-                  alt="mission proof"
-                />
-              ))}
-            </div>
-          )}
-          {onUndo && (
+          <span className="text-green-400/50 text-[11px] font-medium">
+            {"✓"} Mission complete
+          </span>
+          <div className="flex-1" />
+          {isMyTeam && onUndo && (
             <button
               onClick={onUndo}
               className="text-white/20 hover:text-white/50 text-[10px] font-medium shrink-0 transition-colors"
@@ -838,6 +867,7 @@ export default function Home() {
     type: "mission" | "receipt",
     files: FileList
   ) => {
+    if (team !== myTeam) return;
     setUploading(true);
     try {
       const urls: string[] = [];
@@ -857,9 +887,30 @@ export default function Home() {
         tp[barId] = bp;
         return { ...prev, [team]: tp };
       });
+      /* Also add to the shared album */
+      await setAlbumPhotos([...(albumPhotos || []), ...urls]);
     } finally {
       setUploading(false);
     }
+  };
+
+  const deletePhoto = (
+    team: TeamId,
+    barId: string,
+    type: "mission" | "receipt",
+    index: number
+  ) => {
+    if (team !== myTeam) return;
+    setProgress((prev) => {
+      const tp = { ...prev[team] };
+      const bp = { ...tp[barId] };
+      const key = type === "mission" ? "missionPhotos" : "receiptPhotos";
+      const arr = [...(bp[key] || [])];
+      arr.splice(index, 1);
+      bp[key] = arr;
+      tp[barId] = bp;
+      return { ...prev, [team]: tp };
+    });
   };
 
   const uploadToAlbum = async (files: FileList) => {
@@ -901,6 +952,25 @@ export default function Home() {
   return (
     <div className="max-w-lg mx-auto pb-10">
       <Header />
+
+      {/* ---- Live photo carousel (visible to everyone) ---- */}
+      {(albumPhotos ?? []).length > 0 && (
+        <section className="mb-4 overflow-hidden">
+          <p className="px-5 text-white/30 text-[10px] font-bold uppercase tracking-wider mb-2">
+            {"📸"} Live Photos
+          </p>
+          <div className="flex gap-2 overflow-x-auto px-5 pb-2 snap-x snap-mandatory">
+            {(albumPhotos ?? []).slice().reverse().map((url, i) => (
+              <img
+                key={i}
+                src={url}
+                className="w-40 h-40 rounded-xl object-cover border border-white/10 shrink-0 snap-start"
+                alt="shared photo"
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ---- Not joined yet: show sign-up form ---- */}
       {!hasJoined && (
@@ -970,6 +1040,7 @@ export default function Home() {
               const isDone = viewProgress[bar.id]?.departed;
               const isCur = bar.id === curId;
               const isLocked = !isDone && !isCur && curId !== "__done__";
+              const viewingMyTeam = tab === myTeam;
               return (
                 <BarCard
                   key={bar.id}
@@ -990,10 +1061,14 @@ export default function Home() {
                   otherTeamPhotos={
                     viewOtherProgress[bar.id]?.missionPhotos ?? []
                   }
+                  isMyTeam={viewingMyTeam}
                   onMission={(f) => upload(tab, bar.id, "mission", f)}
                   onReceipt={(f) => upload(tab, bar.id, "receipt", f)}
                   onDepart={() => depart(tab, bar.id)}
                   onUndo={() => undoDepart(tab, bar.id)}
+                  onDeletePhoto={(type, idx) =>
+                    deletePhoto(tab, bar.id, type, idx)
+                  }
                 />
               );
             });
