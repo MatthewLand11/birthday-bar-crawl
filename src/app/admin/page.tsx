@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
   DEFAULT_PEOPLE,
@@ -15,7 +15,12 @@ import {
   resetAll,
 } from "@/lib/data";
 import type { Person, BarStop, BarField } from "@/lib/data";
+import { TEAMS } from "@/lib/data";
 import { useFirebase, isFirebaseActive } from "@/lib/firebase";
+
+type TeamId = "team1" | "team2";
+type Phase = "setup" | "race";
+type Assignments = Record<string, TeamId | null>;
 
 /* ================================================================== */
 /*  ADMIN PAGE                                                         */
@@ -34,14 +39,43 @@ export default function AdminPage() {
   const [bars, setBars] = useState<BarStop[]>(DEFAULT_BARS);
   const [notes, setNotes] = useState<string[]>(DEFAULT_NOTES);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  /* Seed local state from Firebase or localStorage on mount */
+  /* Race state (read + control) — Firebase is source of truth */
+  const [phase, setFbPhase] = useFirebase<Phase>("race/phase", "setup");
+  const [assignments, setFbAssignments] = useFirebase<Assignments>("race/assignments", {});
+
+  /* Seed local state on initial load — from Firebase if available, else localStorage */
+  const hasSynced = useRef(false);
   useEffect(() => {
+    if (hasSynced.current) return;
+
     if (live) {
-      setPeople(fbPeople);
-      setBars(fbBars);
-      setNotes(fbNotes);
+      const hasFirebaseData =
+        fbPeople !== DEFAULT_PEOPLE || fbBars !== DEFAULT_BARS || fbNotes !== DEFAULT_NOTES;
+      if (hasFirebaseData) {
+        hasSynced.current = true;
+        setPeople(fbPeople);
+        setBars(fbBars);
+        setNotes(fbNotes);
+      } else {
+        /* Firebase is active but has no data yet — check localStorage as fallback */
+        const localPeople = loadPeople();
+        const localBars = loadBars();
+        const localNotes = loadNotes();
+        const hasLocalData =
+          localPeople !== DEFAULT_PEOPLE || localBars !== DEFAULT_BARS || localNotes !== DEFAULT_NOTES;
+        if (hasLocalData) {
+          hasSynced.current = true;
+          setPeople(localPeople);
+          setBars(localBars);
+          setNotes(localNotes);
+        }
+        /* If neither has data, stay on defaults — hasSynced stays false
+           until Firebase onValue fires with real data (or we give up after a timeout) */
+      }
     } else {
+      hasSynced.current = true;
       setPeople(loadPeople());
       setBars(loadBars());
       setNotes(loadNotes());
@@ -156,37 +190,51 @@ export default function AdminPage() {
   /*  Actions                                                          */
   /* ================================================================ */
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const cleanPeople = people.filter((p) => p.name.trim() !== "");
     const cleanBars = bars.filter((b) => b.name.trim() !== "");
     const cleanNotes = notes.filter((n) => n.trim() !== "");
 
+    setSaveError(null);
+
+    /* Always persist to localStorage as a baseline */
+    savePeople(cleanPeople);
+    saveBars(cleanBars);
+    saveNotes(cleanNotes);
+
     if (live) {
-      /* Write to Firebase — all devices pick it up instantly */
-      setFbPeople(cleanPeople);
-      setFbBars(cleanBars);
-      setFbNotes(cleanNotes);
-    } else {
-      /* Offline fallback — localStorage */
-      savePeople(cleanPeople);
-      saveBars(cleanBars);
-      saveNotes(cleanNotes);
+      try {
+        await setFbPeople(cleanPeople);
+        await setFbBars(cleanBars);
+        await setFbNotes(cleanNotes);
+      } catch {
+        setSaveError("Saved locally only — Firebase denied the write. Changes won't sync to other devices until database rules are updated.");
+      }
     }
+
+    /* Update local editing state to match what was saved */
+    setPeople(cleanPeople);
+    setBars(cleanBars);
+    setNotes(cleanNotes);
 
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     if (!window.confirm("Reset everything back to the original defaults?"))
       return;
+    setSaveError(null);
     if (live) {
-      setFbPeople(DEFAULT_PEOPLE);
-      setFbBars(DEFAULT_BARS);
-      setFbNotes(DEFAULT_NOTES);
-    } else {
-      resetAll();
+      try {
+        await setFbPeople(DEFAULT_PEOPLE);
+        await setFbBars(DEFAULT_BARS);
+        await setFbNotes(DEFAULT_NOTES);
+      } catch {
+        /* Firebase failed — just clear localStorage */
+      }
     }
+    resetAll();
     setPeople(DEFAULT_PEOPLE);
     setBars(DEFAULT_BARS);
     setNotes(DEFAULT_NOTES);
@@ -408,6 +456,140 @@ export default function AdminPage() {
       </section>
 
       {/* ============================================================ */}
+      {/*  TEAM ASSIGNMENTS (read-only view)                            */}
+      {/* ============================================================ */}
+      <section className="mb-8">
+        <h2 className="text-white font-semibold text-sm mb-3 flex items-center gap-2">
+          {"🏁"} Team Assignments
+        </h2>
+        {(() => {
+          const team1 = people.filter((p) => assignments[p.id] === "team1");
+          const team2 = people.filter((p) => assignments[p.id] === "team2");
+          const unassigned = people.filter((p) => !assignments[p.id]);
+          return (
+            <div className="space-y-3">
+              {(["team1", "team2"] as TeamId[]).map((tid) => {
+                const members = tid === "team1" ? team1 : team2;
+                const team = TEAMS[tid];
+                return (
+                  <div
+                    key={tid}
+                    className="rounded-xl border p-3"
+                    style={{
+                      borderColor: team.color + "30",
+                      backgroundColor: team.color + "08",
+                    }}
+                  >
+                    <p
+                      className="text-[11px] font-bold uppercase tracking-wider mb-2"
+                      style={{ color: team.color }}
+                    >
+                      {team.emoji} {team.name} ({members.length})
+                    </p>
+                    {members.length === 0 ? (
+                      <p className="text-white/20 text-xs">No one yet</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {members.map((p) => (
+                          <span
+                            key={p.id}
+                            className="inline-block rounded-full px-2.5 py-1 text-xs font-medium bg-white/10 text-white/60"
+                          >
+                            {p.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {unassigned.length > 0 && (
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                  <p className="text-white/30 text-[11px] font-bold uppercase tracking-wider mb-2">
+                    Not on a team ({unassigned.length})
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {unassigned.map((p) => (
+                      <span
+                        key={p.id}
+                        className="inline-block rounded-full px-2.5 py-1 text-xs font-medium bg-white/10 text-white/30"
+                      >
+                        {p.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </section>
+
+      {/* ============================================================ */}
+      {/*  RACE CONTROLS                                                */}
+      {/* ============================================================ */}
+      <section className="mb-8">
+        <h2 className="text-white font-semibold text-sm mb-3 flex items-center gap-2">
+          {"🎮"} Race Controls
+        </h2>
+        <div className="bg-white/[0.04] border border-white/[0.08] rounded-xl p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-white/40 text-xs">Status:</span>
+            <span
+              className={`text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
+                phase === "race"
+                  ? "bg-green-500/20 text-green-400"
+                  : "bg-white/10 text-white/40"
+              }`}
+            >
+              {phase === "race" ? "Race active" : "Waiting for start"}
+            </span>
+          </div>
+          <div className="flex gap-2">
+            {phase === "setup" ? (
+              <button
+                onClick={async () => {
+                  try {
+                    if (live) await setFbPhase("race");
+                    else setFbPhase("race");
+                  } catch { /* ignore */ }
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-green-500/20 hover:bg-green-500/30 text-green-400 text-xs font-bold uppercase tracking-wider transition-colors"
+              >
+                {"🏁"} Start the Race
+              </button>
+            ) : (
+              <button
+                onClick={async () => {
+                  try {
+                    if (live) await setFbPhase("setup");
+                    else setFbPhase("setup");
+                  } catch { /* ignore */ }
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-white/40 text-xs font-bold uppercase tracking-wider transition-colors"
+              >
+                Pause Race
+              </button>
+            )}
+            <button
+              onClick={async () => {
+                if (!window.confirm("Reset all team assignments and race progress?")) return;
+                try {
+                  if (live) {
+                    await setFbPhase("setup");
+                    await setFbAssignments({});
+                  }
+                } catch { /* ignore */ }
+              }}
+              className="px-4 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400/60 hover:text-red-400 text-xs font-bold transition-colors"
+            >
+              Reset Race
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* ============================================================ */}
       {/*  NOTES                                                        */}
       {/* ============================================================ */}
       <section className="mb-10">
@@ -445,6 +627,11 @@ export default function AdminPage() {
       {/*  STICKY ACTION BAR                                            */}
       {/* ============================================================ */}
       <div className="sticky bottom-0 bg-gradient-to-t from-[#1a0a14] via-[#1a0a14] to-transparent pt-6 pb-6 -mx-5 px-5">
+        {saveError && (
+          <div className="mb-3 px-4 py-2 rounded-xl bg-red-500/20 border border-red-500/30 text-red-300 text-sm">
+            {saveError}
+          </div>
+        )}
         <div className="flex gap-3">
           <button
             onClick={handleSave}

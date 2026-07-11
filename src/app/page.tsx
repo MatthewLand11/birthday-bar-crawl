@@ -3,20 +3,16 @@
 import { useState, useEffect } from "react";
 import {
   DEFAULT_EVENT,
-  DEFAULT_PEOPLE,
   DEFAULT_BARS,
   DEFAULT_NOTES,
   TEAMS,
-  loadPeople,
-  loadBars,
-  loadNotes,
   getAddress,
   getTime,
   getMission,
   getExtraFields,
 } from "@/lib/data";
 import type { Person, BarStop } from "@/lib/data";
-import { useFirebase, uploadPhoto, isFirebaseActive } from "@/lib/firebase";
+import { useFirebase, uploadPhoto, joinBarCrawl } from "@/lib/firebase";
 
 /* ================================================================== */
 /*  TYPES  (race-specific — not shared)                                */
@@ -32,6 +28,8 @@ type TeamId = "team1" | "team2";
 type Phase = "setup" | "race";
 type Assignments = Record<string, TeamId | null>;
 type AllProgress = Record<TeamId, Record<string, BarProgress>>;
+
+const LS_MY_ID = "bbc-my-id";
 
 /* ================================================================== */
 /*  HELPERS                                                            */
@@ -53,7 +51,6 @@ function countDone(tp: Record<string, BarProgress> | undefined) {
   return Object.values(tp).filter((p) => p?.departed).length;
 }
 
-/** Returns the id of the first non-departed bar, or "__done__" if all complete. */
 function firstOpenBar(
   bars: BarStop[],
   tp: Record<string, BarProgress> | undefined
@@ -72,7 +69,7 @@ function firstOpenBar(
 function Header() {
   return (
     <header className="text-center pt-10 pb-5 px-5">
-      <p className="text-4xl mb-1">{"\uD83C\uDF82"}</p>
+      <p className="text-4xl mb-1">{"🎂"}</p>
       <h1 className="text-2xl font-bold text-white tracking-tight">
         {DEFAULT_EVENT.title}
       </h1>
@@ -81,7 +78,7 @@ function Header() {
       </p>
       <div className="mt-2 flex items-center justify-center gap-2 text-pink-200/60 text-xs">
         <span>{DEFAULT_EVENT.date}</span>
-        <span className="text-pink-400">{"\u00B7"}</span>
+        <span className="text-pink-400">{"·"}</span>
         <span>{DEFAULT_EVENT.startTime}</span>
       </div>
     </header>
@@ -89,158 +86,132 @@ function Header() {
 }
 
 /* ================================================================== */
-/*  TEAM SETUP  (drag-and-drop + tap-to-assign)                        */
+/*  JOIN SCREEN                                                        */
 /* ================================================================== */
 
-function TeamSetup({
-  people,
-  assignments,
-  onChange,
-  onStart,
+function JoinScreen({
+  onJoin,
+  joinedCount,
+  loading,
+  error,
 }: {
-  people: Person[];
-  assignments: Assignments;
-  onChange: (a: Assignments) => void;
-  onStart: () => void;
+  onJoin: (name: string) => void;
+  joinedCount: number;
+  loading: boolean;
+  error: string | null;
 }) {
-  const [selected, setSelected] = useState<string | null>(null);
-  const [dragId, setDragId] = useState<string | null>(null);
+  const [name, setName] = useState("");
 
-  const assign = (pid: string, team: TeamId | null) =>
-    onChange({ ...assignments, [pid]: team });
-
-  const unassigned = people.filter((p) => !assignments[p.id]);
-  const team1Members = people.filter((p) => assignments[p.id] === "team1");
-  const team2Members = people.filter((p) => assignments[p.id] === "team2");
-  const ready = team1Members.length >= 1 && team2Members.length >= 1;
-
-  const onDragOver = (e: React.DragEvent) => e.preventDefault();
-  const onDrop = (team: TeamId | null) => {
-    if (dragId) {
-      assign(dragId, team);
-      setDragId(null);
-    }
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onJoin(name);
   };
-
-  const Chip = ({ p, removable }: { p: Person; removable?: boolean }) => {
-    const isSelected = selected === p.id;
-    return (
-      <div
-        draggable
-        onDragStart={() => setDragId(p.id)}
-        onDragEnd={() => setDragId(null)}
-        onClick={(e) => {
-          e.stopPropagation();
-          setSelected(isSelected ? null : p.id);
-        }}
-        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium cursor-grab active:cursor-grabbing select-none transition-all border-2 ${
-          isSelected
-            ? "border-pink-400 bg-pink-500/20 text-white ring-2 ring-pink-400/30 scale-105"
-            : "border-transparent bg-white/10 text-white/80 hover:bg-white/15"
-        }`}
-      >
-        {p.name}
-        {removable && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              assign(p.id, null);
-              if (selected === p.id) setSelected(null);
-            }}
-            className="text-white/30 hover:text-white/70 text-xs leading-none ml-0.5"
-          >
-            {"\u00D7"}
-          </button>
-        )}
-      </div>
-    );
-  };
-
-  const Zone = ({
-    teamId,
-    members,
-  }: {
-    teamId: TeamId;
-    members: Person[];
-  }) => (
-    <div
-      onClick={() => {
-        if (selected) {
-          assign(selected, teamId);
-          setSelected(null);
-        }
-      }}
-      onDragOver={onDragOver}
-      onDrop={() => onDrop(teamId)}
-      className={`flex-1 rounded-2xl border-2 border-dashed p-3 min-h-[90px] transition-all ${
-        selected ? "ring-1 ring-white/20" : ""
-      }`}
-      style={{
-        borderColor: TEAMS[teamId].color + "40",
-        backgroundColor: TEAMS[teamId].color + "08",
-      }}
-    >
-      <p
-        className="text-[11px] font-bold uppercase tracking-wider mb-2"
-        style={{ color: TEAMS[teamId].color }}
-      >
-        {TEAMS[teamId].emoji} {TEAMS[teamId].name} ({members.length})
-      </p>
-      <div className="flex flex-wrap gap-1.5">
-        {members.map((p) => (
-          <Chip key={p.id} p={p} removable />
-        ))}
-        {members.length === 0 && (
-          <p className="text-white/20 text-xs">
-            {selected ? "Tap here to assign" : "Tap a name, then tap here"}
-          </p>
-        )}
-      </div>
-    </div>
-  );
 
   return (
     <section className="px-5 pb-6">
-      <p className="text-white/40 text-[11px] font-medium uppercase tracking-wider mb-3">
-        Build your teams — tap a name, then tap a team
-      </p>
+      <div className="bg-white/[0.06] border border-white/10 rounded-2xl p-6 text-center">
+        <p className="text-3xl mb-3">{"🎉"}</p>
+        <h2 className="text-white font-bold text-lg mb-1">
+          Join the Party!
+        </h2>
+        <p className="text-white/40 text-sm mb-5">
+          Enter your name to get assigned to a team
+        </p>
 
-      <div
-        onDragOver={onDragOver}
-        onDrop={() => onDrop(null)}
-        className="bg-white/[0.04] border border-white/10 rounded-2xl p-3 mb-3 min-h-[52px]"
-      >
-        {unassigned.length === 0 ? (
-          <p className="text-white/25 text-xs text-center py-1">
-            Everyone&apos;s assigned! {"\uD83C\uDF89"}
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Your name"
+            className="w-full bg-white/[0.06] border border-white/10 rounded-xl px-4 py-3 text-white text-center text-base placeholder-white/20 focus:outline-none focus:border-pink-500/50 focus:ring-1 focus:ring-pink-500/30 transition-colors"
+            disabled={loading}
+            autoFocus
+          />
+
+          {error && <p className="text-red-400 text-sm">{error}</p>}
+
+          <button
+            type="submit"
+            disabled={loading || !name.trim()}
+            className={`w-full py-3.5 rounded-full font-bold text-sm uppercase tracking-wider transition-all ${
+              loading || !name.trim()
+                ? "bg-white/10 text-white/25 cursor-not-allowed"
+                : "bg-pink-500 text-white shadow-lg shadow-pink-500/25 hover:bg-pink-400 active:scale-[0.98]"
+            }`}
+          >
+            {loading ? "Joining..." : "🍻 Join the Bar Crawl"}
+          </button>
+        </form>
+
+        {joinedCount > 0 && (
+          <p className="text-white/20 text-xs mt-4">
+            {joinedCount} {joinedCount === 1 ? "person has" : "people have"}{" "}
+            joined so far
           </p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {unassigned.map((p) => (
-              <Chip key={p.id} p={p} />
-            ))}
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ================================================================== */
+/*  TEAM REVEAL  (confirmation after joining)                          */
+/* ================================================================== */
+
+function TeamReveal({
+  person,
+  teamId,
+  teamMembers,
+  raceActive,
+}: {
+  person: Person;
+  teamId: TeamId;
+  teamMembers: Person[];
+  raceActive: boolean;
+}) {
+  const team = TEAMS[teamId];
+
+  return (
+    <section className="px-5 pb-6">
+      <div
+        className="rounded-2xl p-6 text-center border-2"
+        style={{
+          borderColor: team.color + "40",
+          backgroundColor: team.color + "10",
+        }}
+      >
+        <p className="text-5xl mb-3">{team.emoji}</p>
+        <h2 className="text-white font-bold text-xl mb-1">
+          {person.name}, you&apos;re on{" "}
+          <span style={{ color: team.color }}>{team.name}</span>!
+        </h2>
+        <p className="text-white/40 text-sm mt-2">
+          {raceActive
+            ? "The race is on! Scroll down to see your progress."
+            : "Hang tight — the race will start soon."}
+        </p>
+
+        {teamMembers.length > 1 && (
+          <div className="mt-4 pt-4 border-t border-white/10">
+            <p className="text-white/30 text-[11px] font-bold uppercase tracking-wider mb-2">
+              Your teammates
+            </p>
+            <div className="flex flex-wrap justify-center gap-1.5">
+              {teamMembers
+                .filter((m) => m.id !== person.id)
+                .map((m) => (
+                  <span
+                    key={m.id}
+                    className="inline-block rounded-full px-3 py-1 text-xs font-medium bg-white/10 text-white/60"
+                  >
+                    {m.name}
+                  </span>
+                ))}
+            </div>
           </div>
         )}
       </div>
-
-      <div className="flex gap-3 mb-5">
-        <Zone teamId="team1" members={team1Members} />
-        <Zone teamId="team2" members={team2Members} />
-      </div>
-
-      <button
-        disabled={!ready}
-        onClick={onStart}
-        className={`w-full py-3.5 rounded-full font-bold text-sm uppercase tracking-wider transition-all ${
-          ready
-            ? "bg-pink-500 text-white shadow-lg shadow-pink-500/25 hover:bg-pink-400 active:scale-[0.98]"
-            : "bg-white/10 text-white/25 cursor-not-allowed"
-        }`}
-      >
-        {ready
-          ? "\uD83C\uDFC1 Start the Race!"
-          : "Assign at least 1 per team"}
-      </button>
     </section>
   );
 }
@@ -276,9 +247,9 @@ function RaceHeader({
         </p>
         {winner && (
           <span className="bg-pink-500 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full animate-bounce">
-            {"\uD83C\uDF89"}{" "}
+            {"🎉"}{" "}
             {winner === "TIE"
-              ? "It\u2019s a tie!"
+              ? "It’s a tie!"
               : `${TEAMS[winner as TeamId].name} wins!`}
           </span>
         )}
@@ -341,13 +312,11 @@ function BarCard({
   onDepart: () => void;
   onUndo?: () => void;
 }) {
-  /* Firebase drops empty arrays, so defensively default them */
   const photos = bp.missionPhotos ?? [];
   const receipts = bp.receiptPhotos ?? [];
   const done = bp.departed;
   const canLeave = photos.length > 0;
 
-  /* Extract well-known fields */
   const address = getAddress(bar);
   const time = getTime(bar);
   const mission = getMission(bar);
@@ -359,12 +328,10 @@ function BarCard({
       )}`
     : null;
 
-  /* Subtitle line: address · ~time (either or both may be absent) */
   const subtitle = [address, time ? `~${time}` : null]
     .filter(Boolean)
-    .join(" \u00B7 ");
+    .join(" · ");
 
-  /* Upcoming bars — collapsed */
   if (isUpcoming) {
     return (
       <div className="flex items-center gap-3 rounded-xl px-4 py-3 mb-2 bg-white/[0.03] border border-white/[0.05] opacity-40">
@@ -387,7 +354,6 @@ function BarCard({
           : "bg-white/[0.04] border-white/[0.06] opacity-50"
       }`}
     >
-      {/* ---- header row ---- */}
       <div className="flex items-start justify-between mb-2">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -397,7 +363,7 @@ function BarCard({
             </h3>
             {done && (
               <span className="text-green-400 text-xs font-bold">
-                {"\u2713"}
+                {"✓"}
               </span>
             )}
             {isCurrent && (
@@ -421,7 +387,6 @@ function BarCard({
         </span>
       </div>
 
-      {/* ---- mission box (if a "Mission" field exists) ---- */}
       {mission && (
         <div className="bg-pink-500/10 border border-pink-500/15 rounded-xl p-3 mb-3">
           <p className="text-pink-300/80 text-[10px] font-bold uppercase tracking-widest mb-1">
@@ -433,7 +398,6 @@ function BarCard({
         </div>
       )}
 
-      {/* ---- extra custom fields ---- */}
       {extras.length > 0 && (
         <div className="space-y-1 mb-3">
           {extras.map((f) => (
@@ -447,7 +411,6 @@ function BarCard({
         </div>
       )}
 
-      {/* ---- active bar controls ---- */}
       {!done && (
         <>
           <div className="flex gap-2 mb-3">
@@ -464,9 +427,8 @@ function BarCard({
                   }
                 }}
               />
-              {"\uD83D\uDCF8"} Mission
-              {photos.length > 0 &&
-                ` (${photos.length})`}
+              {"📸"} Mission
+              {photos.length > 0 && ` (${photos.length})`}
             </label>
             <label className="flex-1 flex items-center justify-center gap-1 bg-white/[0.07] hover:bg-white/[0.12] text-white/50 text-[11px] font-semibold py-2.5 rounded-xl cursor-pointer transition-colors">
               <input
@@ -481,9 +443,8 @@ function BarCard({
                   }
                 }}
               />
-              {"\uD83E\uDDFE"} Receipt
-              {receipts.length > 0 &&
-                ` (${receipts.length})`}
+              {"🧾"} Receipt
+              {receipts.length > 0 && ` (${receipts.length})`}
             </label>
           </div>
 
@@ -516,7 +477,7 @@ function BarCard({
                 rel="noopener noreferrer"
                 className="flex-1 flex items-center justify-center gap-1 bg-white/[0.07] hover:bg-white/[0.12] text-white/50 text-[11px] font-semibold py-2.5 rounded-xl transition-colors"
               >
-                {"\uD83D\uDCCD"} Directions
+                {"📍"} Directions
               </a>
             )}
             <button
@@ -528,7 +489,7 @@ function BarCard({
                   : "bg-white/[0.05] text-white/20 cursor-not-allowed"
               }`}
             >
-              {canLeave ? "\u2713 Left this bar" : "Upload photo first"}
+              {canLeave ? "✓ Left this bar" : "Upload photo first"}
             </button>
           </div>
         </>
@@ -570,7 +531,7 @@ function NotesSection({ notes }: { notes: string[] }) {
   return (
     <section className="mx-5 mt-6 mb-8 bg-white/[0.05] border border-white/[0.08] rounded-2xl p-4">
       <h2 className="text-white/70 font-semibold text-xs uppercase tracking-wider mb-2">
-        {"\uD83D\uDCCC"} Notes
+        {"📌"} Notes
       </h2>
       <ul className="space-y-1">
         {notes.map((n, i) => (
@@ -588,55 +549,97 @@ function NotesSection({ notes }: { notes: string[] }) {
 /* ================================================================== */
 
 export default function Home() {
-  const live = isFirebaseActive();
+  /* ---- Firebase is the source of truth ---- */
+  const [people] = useFirebase<Person[]>("config/people", []);
+  const [bars] = useFirebase<BarStop[]>("config/bars", DEFAULT_BARS);
+  const [notes] = useFirebase<string[]>("config/notes", DEFAULT_NOTES);
+  const [phase] = useFirebase<Phase>("race/phase", "setup");
+  const [assignments] = useFirebase<Assignments>("race/assignments", {});
+  const [progress, setProgress] = useFirebase<AllProgress>(
+    "race/progress",
+    initProgress(bars)
+  );
 
-  /* ---- Config: Firebase if available, else localStorage ---- */
-  const [fbPeople, setFbPeople] = useFirebase<Person[]>("config/people", DEFAULT_PEOPLE);
-  const [fbBars, setFbBars] = useFirebase<BarStop[]>("config/bars", DEFAULT_BARS);
-  const [fbNotes] = useFirebase<string[]>("config/notes", DEFAULT_NOTES);
-
-  /* Offline fallback state */
-  const [localPeople, setLocalPeople] = useState<Person[]>(DEFAULT_PEOPLE);
-  const [localBars, setLocalBars] = useState<BarStop[]>(DEFAULT_BARS);
-  const [localNotes, setLocalNotes] = useState<string[]>(DEFAULT_NOTES);
+  /* ---- Device identity (localStorage only) ---- */
+  const [myId, setMyId] = useState<string | null>(null);
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!live) {
-      setLocalPeople(loadPeople());
-      setLocalBars(loadBars());
-      setLocalNotes(loadNotes());
+    const stored = localStorage.getItem(LS_MY_ID);
+    if (stored) setMyId(stored);
+  }, []);
+
+  const myPerson = myId ? people.find((p) => p.id === myId) : null;
+  const myTeam = (myId ? assignments[myId] : null) as TeamId | null;
+
+  /* Clear stale identity if person was removed from Firebase */
+  useEffect(() => {
+    if (!myId || people.length === 0) return;
+    if (!people.find((p) => p.id === myId)) {
+      localStorage.removeItem(LS_MY_ID);
+      setMyId(null);
     }
-  }, [live]);
+  }, [myId, people]);
 
-  const people = live ? fbPeople : localPeople;
-  const bars = live ? fbBars : localBars;
-  const notes = live ? fbNotes : localNotes;
+  const joinedCount = Object.values(assignments).filter(Boolean).length;
 
-  /* ---- Race state: Firebase if available, else local ---- */
-  const [fbPhase, setFbPhase] = useFirebase<Phase>("race/phase", "setup");
-  const [fbAssignments, setFbAssignments] = useFirebase<Assignments>("race/assignments", {});
-  const [fbProgress, setFbProgress] = useFirebase<AllProgress>("race/progress", initProgress(bars));
+  const myTeamMembers = myTeam
+    ? people.filter((p) => assignments[p.id] === myTeam)
+    : [];
 
-  const [localPhase, setLocalPhase] = useState<Phase>("setup");
-  const [localAssignments, setLocalAssignments] = useState<Assignments>({});
-  const [localProgress, setLocalProgress] = useState<AllProgress>(initProgress(bars));
-
-  const phase = live ? fbPhase : localPhase;
-  const setPhase = live ? setFbPhase : setLocalPhase;
-  const assignments = live ? fbAssignments : localAssignments;
-  const setAssignments = live ? setFbAssignments : setLocalAssignments;
-  const progress = live ? fbProgress : localProgress;
-  const setProgress = live ? setFbProgress : setLocalProgress;
-
+  /* ---- Tab for race view (default to my team) ---- */
   const [tab, setTab] = useState<TeamId>("team1");
   const [uploading, setUploading] = useState(false);
 
-  /* Re-init progress when bars change (offline only) */
   useEffect(() => {
-    if (!live) setLocalProgress(initProgress(bars));
-  }, [bars, live]);
+    if (myTeam) setTab(myTeam);
+  }, [myTeam]);
 
-  /* ---- Handlers ---- */
+  /* ================================================================ */
+  /*  Join handler — Firebase transactions                             */
+  /* ================================================================ */
+
+  const handleJoin = async (name: string) => {
+    const trimmed = name.trim();
+    setJoinError(null);
+
+    if (!trimmed) {
+      setJoinError("Please enter your name.");
+      return;
+    }
+
+    const isDupe = people.some(
+      (p) => p.name.trim().toLowerCase() === trimmed.toLowerCase()
+    );
+    if (isDupe) {
+      setJoinError(
+        "That name is already taken. Try adding a last initial."
+      );
+      return;
+    }
+
+    setJoining(true);
+
+    try {
+      const { id } = await joinBarCrawl(trimmed);
+      localStorage.setItem(LS_MY_ID, id);
+      setMyId(id);
+    } catch (err) {
+      setJoinError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again."
+      );
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  /* ================================================================ */
+  /*  Race handlers (same as before)                                   */
+  /* ================================================================ */
+
   const upload = async (
     team: TeamId,
     barId: string,
@@ -647,13 +650,17 @@ export default function Home() {
     try {
       const urls: string[] = [];
       for (const file of Array.from(files)) {
-        const url = await uploadPhoto(file, `photos/${team}/${barId}/${type}`);
+        const url = await uploadPhoto(
+          file,
+          `photos/${team}/${barId}/${type}`
+        );
         urls.push(url);
       }
       setProgress((prev) => {
         const tp = { ...prev[team] };
         const bp = { ...tp[barId] };
-        const key = type === "mission" ? "missionPhotos" : "receiptPhotos";
+        const key =
+          type === "mission" ? "missionPhotos" : "receiptPhotos";
         bp[key] = [...(bp[key] || []), ...urls];
         tp[barId] = bp;
         return { ...prev, [team]: tp };
@@ -679,27 +686,38 @@ export default function Home() {
     });
   };
 
-  const resetRace = () => {
-    if (!window.confirm("Reset all race progress for both teams? Photos will be cleared.")) return;
-    setProgress(initProgress(bars));
-    setPhase("setup");
-    setAssignments({});
-  };
+  /* ================================================================ */
+  /*  Render                                                           */
+  /* ================================================================ */
+
+  const hasJoined = myId && myPerson && myTeam;
 
   return (
     <div className="max-w-lg mx-auto pb-10">
       <Header />
 
-      {phase === "setup" && (
-        <TeamSetup
-          people={people}
-          assignments={assignments}
-          onChange={setAssignments}
-          onStart={() => setPhase("race")}
+      {/* ---- Not joined yet: show sign-up form ---- */}
+      {!hasJoined && (
+        <JoinScreen
+          onJoin={handleJoin}
+          joinedCount={joinedCount}
+          loading={joining}
+          error={joinError}
         />
       )}
 
-      {phase === "race" && (
+      {/* ---- Joined: show team assignment ---- */}
+      {hasJoined && (
+        <TeamReveal
+          person={myPerson}
+          teamId={myTeam}
+          teamMembers={myTeamMembers}
+          raceActive={phase === "race"}
+        />
+      )}
+
+      {/* ---- Race view (only when joined AND race is active) ---- */}
+      {hasJoined && phase === "race" && (
         <>
           <RaceHeader progress={progress} totalBars={bars.length} />
 
@@ -725,7 +743,6 @@ export default function Home() {
 
           <section className="px-5">
             {(() => {
-              /* Team 1 follows the saved order; Team 2 goes in reverse */
               const teamBars =
                 tab === "team2" ? [...bars].reverse() : bars;
               const teamProgress = progress?.[tab] ?? {};
@@ -736,7 +753,13 @@ export default function Home() {
                   key={bar.id}
                   bar={bar}
                   idx={i}
-                  bp={teamProgress[bar.id] ?? { missionPhotos: [], receiptPhotos: [], departed: false }}
+                  bp={
+                    teamProgress[bar.id] ?? {
+                      missionPhotos: [],
+                      receiptPhotos: [],
+                      departed: false,
+                    }
+                  }
                   isCurrent={bar.id === curId}
                   isUpcoming={i > curIdx && curId !== "__done__"}
                   teamId={tab}
@@ -748,42 +771,25 @@ export default function Home() {
               ));
             })()}
           </section>
-
-          <div className="flex items-center justify-center gap-4 mt-4">
-            <button
-              onClick={() => setPhase("setup")}
-              className="text-white/20 hover:text-white/40 text-xs transition-colors"
-            >
-              {"\u2190"} Edit teams
-            </button>
-            <button
-              onClick={resetRace}
-              className="text-red-400/40 hover:text-red-400 text-xs transition-colors"
-            >
-              Reset race
-            </button>
-          </div>
         </>
       )}
 
       <NotesSection notes={notes} />
 
-      {/* Upload indicator */}
       {uploading && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 bg-pink-500 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg z-50 animate-pulse">
           Uploading...
         </div>
       )}
 
-      {/* Firebase status */}
-      {live && (
-        <div className="text-center mb-2">
-          <span className="text-green-400/40 text-[10px]">{"\u25CF"} Live sync on</span>
-        </div>
-      )}
+      <div className="text-center mb-2">
+        <span className="text-green-400/40 text-[10px]">
+          {"●"} Live sync on
+        </span>
+      </div>
 
       <footer className="text-center text-white/15 text-[11px] pb-6">
-        Made with {"\uD83D\uDC96"} for {DEFAULT_EVENT.star}&apos;s birthday
+        Made with {"💖"} for {DEFAULT_EVENT.star}&apos;s birthday
       </footer>
     </div>
   );

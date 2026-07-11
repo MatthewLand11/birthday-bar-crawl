@@ -12,6 +12,7 @@ import {
   ref,
   set,
   onValue,
+  runTransaction,
   type Database,
 } from "firebase/database";
 import {
@@ -67,7 +68,7 @@ export const isFirebaseActive = (): boolean => db !== null;
 export function useFirebase<T>(
   path: string,
   fallback: T
-): [T, (val: T | ((prev: T) => T)) => void] {
+): [T, (val: T | ((prev: T) => T)) => Promise<void>] {
   const [value, setLocal] = useState<T>(fallback);
 
   /* Attach real-time listener */
@@ -84,16 +85,17 @@ export function useFirebase<T>(
   }, [path]);
 
   /* Write to Firebase (or just set local state if offline) */
-  const setValue = (valOrFn: T | ((prev: T) => T)) => {
+  const setValue = async (valOrFn: T | ((prev: T) => T)): Promise<void> => {
     if (typeof valOrFn === "function") {
+      let next: T | undefined;
       setLocal((prev) => {
-        const next = (valOrFn as (p: T) => T)(prev);
-        if (db) set(ref(db, path), next);
+        next = (valOrFn as (p: T) => T)(prev);
         return next;
       });
+      if (db && next !== undefined) await set(ref(db, path), next);
     } else {
       setLocal(valOrFn);
-      if (db) set(ref(db, path), valOrFn);
+      if (db) await set(ref(db, path), valOrFn);
     }
   };
 
@@ -106,6 +108,67 @@ export function useFirebase<T>(
 /*  Returns the public download URL.                                   */
 /*  If Firebase Storage is off, returns a local blob URL instead.      */
 /* ================================================================== */
+
+/* ================================================================== */
+/*  joinBarCrawl — atomic sign-up via Firebase transactions            */
+/*                                                                     */
+/*  1. Transaction on race/assignments: read current team counts,      */
+/*     assign the new person to the smaller team (random on tie).      */
+/*  2. Transaction on config/people: add the person, aborting if a     */
+/*     duplicate name appeared since the UI pre-check.                 */
+/*  3. If (2) aborts, roll back the assignment from (1).               */
+/* ================================================================== */
+
+type TeamId = "team1" | "team2";
+
+export async function joinBarCrawl(
+  name: string
+): Promise<{ id: string; team: TeamId }> {
+  if (!db) throw new Error("Not connected to Firebase.");
+
+  const id = crypto.randomUUID();
+  const trimmed = name.trim();
+  const tiebreaker: TeamId = Math.random() < 0.5 ? "team1" : "team2";
+
+  /* Step 1 — atomic team assignment */
+  let assignedTeam: TeamId = tiebreaker;
+  await runTransaction(ref(db, "race/assignments"), (current) => {
+    const curr = (current as Record<string, string> | null) ?? {};
+    const t1 = Object.values(curr).filter((t) => t === "team1").length;
+    const t2 = Object.values(curr).filter((t) => t === "team2").length;
+    assignedTeam =
+      t1 < t2 ? "team1" : t2 < t1 ? "team2" : tiebreaker;
+    return { ...curr, [id]: assignedTeam };
+  });
+
+  /* Step 2 — atomic people-list addition with duplicate guard */
+  const peopleTx = await runTransaction(
+    ref(db, "config/people"),
+    (current) => {
+      const arr = Array.isArray(current) ? current : [];
+      const lower = trimmed.toLowerCase();
+      if (
+        arr.some(
+          (p: { name?: string }) =>
+            p?.name?.trim().toLowerCase() === lower
+        )
+      ) {
+        return undefined; // abort — name taken
+      }
+      return [...arr, { id, name: trimmed }];
+    }
+  );
+
+  if (!peopleTx.committed) {
+    /* Roll back the assignment we just wrote */
+    await set(ref(db, `race/assignments/${id}`), null);
+    throw new Error(
+      "That name was just taken by someone else. Try a different name."
+    );
+  }
+
+  return { id, team: assignedTeam };
+}
 
 export async function uploadPhoto(
   file: File,
