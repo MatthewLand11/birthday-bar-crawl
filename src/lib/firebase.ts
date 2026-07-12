@@ -15,13 +15,6 @@ import {
   runTransaction,
   type Database,
 } from "firebase/database";
-import {
-  getStorage,
-  ref as storageRef,
-  uploadBytes,
-  getDownloadURL,
-  type FirebaseStorage,
-} from "firebase/storage";
 import { useEffect, useState } from "react";
 
 /* ---- Firebase config from env vars ---- */
@@ -43,15 +36,13 @@ const firebaseConfig = {
 
 let app: FirebaseApp | null = null;
 let db: Database | null = null;
-let storage: FirebaseStorage | null = null;
 
 if (apiKey) {
   app = initializeApp(firebaseConfig);
   db = getDatabase(app);
-  storage = getStorage(app);
 }
 
-export { db, storage };
+export { db };
 
 /** True when Firebase is configured and initialized. */
 export const isFirebaseActive = (): boolean => db !== null;
@@ -170,19 +161,44 @@ export async function joinBarCrawl(
   return { id, team: assignedTeam };
 }
 
+/* ================================================================== */
+/*  uploadPhoto — compress + store as base64 in Realtime Database      */
+/*                                                                     */
+/*  Photos are resized to max 800px, JPEG-compressed, then stored      */
+/*  as data URLs in RTDB (no Firebase Storage / Blaze plan needed).    */
+/* ================================================================== */
+
+function compressImage(file: File, maxWidth = 800, quality = 0.6): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Failed to load image"));
+      img.onload = () => {
+        const scale = Math.min(1, maxWidth / img.width);
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { reject(new Error("Canvas not supported")); return; }
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export async function uploadPhoto(
   file: File,
   path: string
 ): Promise<string> {
-  if (!storage) {
-    /* Offline fallback — local blob URL (only works on this device) */
-    return URL.createObjectURL(file);
+  if (file.type.startsWith("image/")) {
+    return compressImage(file);
   }
-
-  const fileRef = storageRef(
-    storage,
-    `${path}/${crypto.randomUUID()}-${file.name}`
-  );
-  await uploadBytes(fileRef, file);
-  return getDownloadURL(fileRef);
+  return URL.createObjectURL(file);
 }
