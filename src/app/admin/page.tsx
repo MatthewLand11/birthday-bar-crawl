@@ -44,6 +44,8 @@ export default function AdminPage() {
   /* Race state (read + control) — Firebase is source of truth */
   const [phase, setFbPhase] = useFirebase<Phase>("race/phase", "setup");
   const [assignments, setFbAssignments] = useFirebase<Assignments>("race/assignments", {});
+  const [, setFbProgress] = useFirebase<Record<string, unknown>>("race/progress", {});
+  const [, setFbAlbum] = useFirebase<string[]>("album/photos", []);
   const [selectedPerson, setSelectedPerson] = useState<string | null>(null);
 
   /* Seed local state on initial load — from Firebase if available, else localStorage */
@@ -637,12 +639,12 @@ export default function AdminPage() {
             )}
             <button
               onClick={async () => {
-                if (!window.confirm("Reset all team assignments and race progress?")) return;
+                if (!window.confirm("Reset all team assignments, race progress, and shared album?")) return;
                 try {
-                  if (live) {
-                    await setFbPhase("setup");
-                    await setFbAssignments({});
-                  }
+                  await setFbPhase("setup");
+                  await setFbAssignments({});
+                  await setFbProgress({});
+                  await setFbAlbum([]);
                 } catch { /* ignore */ }
               }}
               className="px-4 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400/60 hover:text-red-400 text-xs font-bold transition-colors"
