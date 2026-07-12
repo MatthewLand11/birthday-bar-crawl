@@ -15,7 +15,7 @@ import {
   runTransaction,
   type Database,
 } from "firebase/database";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /* ---- Firebase config from env vars ---- */
 
@@ -61,6 +61,12 @@ export function useFirebase<T>(
   fallback: T
 ): [T, (val: T | ((prev: T) => T)) => Promise<void>] {
   const [value, setLocal] = useState<T>(fallback);
+  const valueRef = useRef<T>(fallback);
+
+  /* Keep ref in sync with latest value (from Firebase or local) */
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
 
   /* Attach real-time listener */
   useEffect(() => {
@@ -69,25 +75,25 @@ export function useFirebase<T>(
     const unsub = onValue(dbRef, (snap) => {
       const v = snap.val();
       if (v !== null && v !== undefined) {
+        valueRef.current = v as T;
         setLocal(v as T);
       }
     });
     return () => unsub();
   }, [path]);
 
-  /* Write to Firebase (or just set local state if offline) */
+  /* Write to Firebase — uses ref for current value so callback
+     writes always reach Firebase (React 18 defers setState callbacks) */
   const setValue = async (valOrFn: T | ((prev: T) => T)): Promise<void> => {
+    let next: T;
     if (typeof valOrFn === "function") {
-      let next: T | undefined;
-      setLocal((prev) => {
-        next = (valOrFn as (p: T) => T)(prev);
-        return next;
-      });
-      if (db && next !== undefined) await set(ref(db, path), next);
+      next = (valOrFn as (p: T) => T)(valueRef.current);
     } else {
-      setLocal(valOrFn);
-      if (db) await set(ref(db, path), valOrFn);
+      next = valOrFn;
     }
+    valueRef.current = next;
+    setLocal(next);
+    if (db) await set(ref(db, path), next);
   };
 
   return [value, setValue];
