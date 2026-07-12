@@ -177,27 +177,11 @@ const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "";
 const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET ?? "";
 const cloudinaryEnabled = cloudName !== "" && uploadPreset !== "";
 
-async function uploadToCloudinary(file: File): Promise<string> {
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("upload_preset", uploadPreset);
-
-  const resourceType = file.type.startsWith("video/") ? "video" : "image";
-  const res = await fetch(
-    `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`,
-    { method: "POST", body: formData }
-  );
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Upload failed: ${text}`);
-  }
-
-  const data = await res.json();
-  return data.secure_url as string;
-}
-
-function compressImage(file: File, maxWidth = 800, quality = 0.6): Promise<string> {
+function compressImageToBlob(
+  file: File,
+  maxWidth = 1200,
+  quality = 0.7
+): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("Failed to read file"));
@@ -212,9 +196,19 @@ function compressImage(file: File, maxWidth = 800, quality = 0.6): Promise<strin
         canvas.width = w;
         canvas.height = h;
         const ctx = canvas.getContext("2d");
-        if (!ctx) { reject(new Error("Canvas not supported")); return; }
+        if (!ctx) {
+          reject(new Error("Canvas not supported"));
+          return;
+        }
         ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL("image/jpeg", quality));
+        canvas.toBlob(
+          (blob) => {
+            if (blob) resolve(blob);
+            else reject(new Error("Compression failed"));
+          },
+          "image/jpeg",
+          quality
+        );
       };
       img.src = reader.result as string;
     };
@@ -222,17 +216,41 @@ function compressImage(file: File, maxWidth = 800, quality = 0.6): Promise<strin
   });
 }
 
+async function uploadToCloudinary(file: File | Blob, resourceType: "image" | "video"): Promise<string> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", uploadPreset);
+
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`,
+    { method: "POST", body: formData }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Upload failed: ${text}`);
+  }
+
+  const data = await res.json();
+  return data.secure_url as string;
+}
+
 export async function uploadPhoto(
   file: File,
   _path: string
 ): Promise<string> {
-  if (cloudinaryEnabled) {
-    return uploadToCloudinary(file);
+  if (!cloudinaryEnabled) {
+    if (file.type.startsWith("image/")) {
+      const blob = await compressImageToBlob(file);
+      return URL.createObjectURL(blob);
+    }
+    throw new Error("Video uploads require Cloudinary to be configured.");
   }
+
   if (file.type.startsWith("image/")) {
-    return compressImage(file);
+    const compressed = await compressImageToBlob(file);
+    return uploadToCloudinary(compressed, "image");
   }
-  throw new Error(
-    "Video uploads require Cloudinary. Add NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME and NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET to your environment."
-  );
+
+  return uploadToCloudinary(file, "video");
 }

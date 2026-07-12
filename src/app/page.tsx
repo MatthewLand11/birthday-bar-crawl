@@ -755,10 +755,12 @@ function BarCard({
 function SharedAlbum({
   albumPhotos,
   onUpload,
+  onDelete,
   uploading,
 }: {
   albumPhotos: string[];
   onUpload: (files: FileList) => void;
+  onDelete: (index: number) => void;
   uploading: boolean;
 }) {
   return (
@@ -771,7 +773,6 @@ function SharedAlbum({
           <input
             type="file"
             accept="image/*,video/*"
-            capture="environment"
             className="hidden"
             multiple
             onChange={(e) => {
@@ -781,7 +782,7 @@ function SharedAlbum({
               }
             }}
           />
-          {uploading ? "Uploading..." : "+ Add Photo"}
+          {uploading ? "Uploading..." : "+ Add Photo/Video"}
         </label>
       </div>
       {albumPhotos.length === 0 ? (
@@ -791,12 +792,19 @@ function SharedAlbum({
       ) : (
         <div className="grid grid-cols-3 gap-1.5">
           {albumPhotos.map((url, i) => (
-            <MediaThumb
-              key={i}
-              src={url}
-              className="w-full aspect-square rounded-lg object-cover border border-white/10"
-              alt="shared photo"
-            />
+            <div key={i} className="relative">
+              <MediaThumb
+                src={url}
+                className="w-full aspect-square rounded-lg object-cover border border-white/10"
+                alt="shared photo"
+              />
+              <button
+                onClick={() => onDelete(i)}
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] leading-none flex items-center justify-center shadow-md"
+              >
+                {"×"}
+              </button>
+            </div>
           ))}
         </div>
       )}
@@ -948,14 +956,11 @@ export default function Home() {
     setUploading(true);
     setUploadError(null);
     try {
-      const urls: string[] = [];
-      for (const file of Array.from(files)) {
-        const url = await uploadPhoto(
-          file,
-          `photos/${team}/${barId}/${type}`
-        );
-        urls.push(url);
-      }
+      const urls = await Promise.all(
+        Array.from(files).map((file) =>
+          uploadPhoto(file, `photos/${team}/${barId}/${type}`)
+        )
+      );
       setProgress((prev) => {
         const tp = { ...prev[team] };
         const bp = { ...tp[barId] };
@@ -969,13 +974,7 @@ export default function Home() {
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "Upload failed";
-      if (msg.includes("storage/unauthorized") || msg.includes("403")) {
-        setUploadError(
-          "Upload blocked — Firebase Storage rules need to be updated. Go to Firebase Console → Storage → Rules and set: allow read, write: if true;"
-        );
-      } else {
-        setUploadError(`Upload failed: ${msg}`);
-      }
+      setUploadError(`Upload failed: ${msg}`);
     } finally {
       setUploading(false);
     }
@@ -1004,25 +1003,23 @@ export default function Home() {
     setAlbumUploading(true);
     setUploadError(null);
     try {
-      const urls: string[] = [];
-      for (const file of Array.from(files)) {
-        const url = await uploadPhoto(file, "photos/album");
-        urls.push(url);
-      }
+      const urls = await Promise.all(
+        Array.from(files).map((file) => uploadPhoto(file, "photos/album"))
+      );
       await setAlbumPhotos([...(albumPhotos || []), ...urls]);
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "Upload failed";
-      if (msg.includes("storage/unauthorized") || msg.includes("403")) {
-        setUploadError(
-          "Upload blocked — Firebase Storage rules need to be updated. Go to Firebase Console → Storage → Rules and set: allow read, write: if true;"
-        );
-      } else {
-        setUploadError(`Upload failed: ${msg}`);
-      }
+      setUploadError(`Upload failed: ${msg}`);
     } finally {
       setAlbumUploading(false);
     }
+  };
+
+  const deleteFromAlbum = async (index: number) => {
+    const arr = [...(albumPhotos || [])];
+    arr.splice(index, 1);
+    await setAlbumPhotos(arr);
   };
 
   const depart = (team: TeamId, barId: string) => {
@@ -1191,6 +1188,7 @@ export default function Home() {
         <SharedAlbum
           albumPhotos={albumPhotos ?? []}
           onUpload={uploadToAlbum}
+          onDelete={deleteFromAlbum}
           uploading={albumUploading}
         />
       )}
