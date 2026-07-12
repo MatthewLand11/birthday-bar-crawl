@@ -193,12 +193,50 @@ function compressImage(file: File, maxWidth = 800, quality = 0.6): Promise<strin
   });
 }
 
+function extractVideoFrame(file: File, maxWidth = 800, quality = 0.6): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+
+    const url = URL.createObjectURL(file);
+    video.src = url;
+
+    video.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Failed to load video"));
+    };
+
+    video.onloadeddata = () => {
+      video.currentTime = Math.min(0.5, video.duration / 2);
+    };
+
+    video.onseeked = () => {
+      const scale = Math.min(1, maxWidth / video.videoWidth);
+      const w = Math.round(video.videoWidth * scale);
+      const h = Math.round(video.videoHeight * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { URL.revokeObjectURL(url); reject(new Error("Canvas not supported")); return; }
+      ctx.drawImage(video, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+  });
+}
+
 export async function uploadPhoto(
   file: File,
-  path: string
+  _path: string
 ): Promise<string> {
   if (file.type.startsWith("image/")) {
     return compressImage(file);
   }
-  return URL.createObjectURL(file);
+  if (file.type.startsWith("video/")) {
+    return extractVideoFrame(file);
+  }
+  throw new Error("Only images and videos are supported");
 }
