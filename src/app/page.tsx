@@ -1165,9 +1165,7 @@ export default function Home() {
                   teamId={tab}
                   missionLocked={isLocked}
                   currentBarName={curName}
-                  otherTeamPhotos={
-                    viewOtherProgress[bar.id]?.missionPhotos ?? []
-                  }
+                  otherTeamPhotos={[]}
                   isMyTeam={viewingMyTeam}
                   onMission={(f) => upload(tab, bar.id, "mission", f)}
                   onReceipt={(f) => upload(tab, bar.id, "receipt", f)}
