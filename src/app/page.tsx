@@ -904,6 +904,8 @@ export default function Home() {
   /*  Race handlers (same as before)                                   */
   /* ================================================================ */
 
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
   const upload = async (
     team: TeamId,
     barId: string,
@@ -912,6 +914,7 @@ export default function Home() {
   ) => {
     if (team !== myTeam) return;
     setUploading(true);
+    setUploadError(null);
     try {
       const urls: string[] = [];
       for (const file of Array.from(files)) {
@@ -930,8 +933,17 @@ export default function Home() {
         tp[barId] = bp;
         return { ...prev, [team]: tp };
       });
-      /* Also add to the shared album */
       await setAlbumPhotos([...(albumPhotos || []), ...urls]);
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Upload failed";
+      if (msg.includes("storage/unauthorized") || msg.includes("403")) {
+        setUploadError(
+          "Upload blocked — Firebase Storage rules need to be updated. Go to Firebase Console → Storage → Rules and set: allow read, write: if true;"
+        );
+      } else {
+        setUploadError(`Upload failed: ${msg}`);
+      }
     } finally {
       setUploading(false);
     }
@@ -958,6 +970,7 @@ export default function Home() {
 
   const uploadToAlbum = async (files: FileList) => {
     setAlbumUploading(true);
+    setUploadError(null);
     try {
       const urls: string[] = [];
       for (const file of Array.from(files)) {
@@ -965,6 +978,16 @@ export default function Home() {
         urls.push(url);
       }
       await setAlbumPhotos([...(albumPhotos || []), ...urls]);
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Upload failed";
+      if (msg.includes("storage/unauthorized") || msg.includes("403")) {
+        setUploadError(
+          "Upload blocked — Firebase Storage rules need to be updated. Go to Firebase Console → Storage → Rules and set: allow read, write: if true;"
+        );
+      } else {
+        setUploadError(`Upload failed: ${msg}`);
+      }
     } finally {
       setAlbumUploading(false);
     }
@@ -1145,6 +1168,21 @@ export default function Home() {
       {(uploading || albumUploading) && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 bg-pink-500 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg z-50 animate-pulse">
           Uploading...
+        </div>
+      )}
+
+      {uploadError && (
+        <div className="fixed bottom-20 left-4 right-4 max-w-lg mx-auto bg-red-500/90 text-white text-xs font-medium px-4 py-3 rounded-xl shadow-lg z-50">
+          <div className="flex items-start gap-2">
+            <span className="shrink-0">{"⚠️"}</span>
+            <p>{uploadError}</p>
+            <button
+              onClick={() => setUploadError(null)}
+              className="shrink-0 text-white/60 hover:text-white ml-2"
+            >
+              {"×"}
+            </button>
+          </div>
         </div>
       )}
 
