@@ -32,6 +32,38 @@ type AllProgress = Record<TeamId, Record<string, BarProgress>>;
 const LS_MY_ID = "bbc-my-id";
 
 /* ================================================================== */
+/*  MEDIA HELPER — renders image or playable video based on URL        */
+/* ================================================================== */
+
+function isVideoUrl(url: string): boolean {
+  return /\.(mp4|mov|webm|avi|mkv)/i.test(url) || url.includes("/video/");
+}
+
+function MediaThumb({
+  src,
+  className,
+  alt,
+}: {
+  src: string;
+  className?: string;
+  alt?: string;
+}) {
+  if (isVideoUrl(src)) {
+    return (
+      <video
+        src={src}
+        className={className}
+        controls
+        playsInline
+        muted
+        preload="metadata"
+      />
+    );
+  }
+  return <img src={src} className={className} alt={alt ?? "photo"} />;
+}
+
+/* ================================================================== */
 /*  HELPERS                                                            */
 /* ================================================================== */
 
@@ -576,7 +608,7 @@ function BarCard({
         <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1 -mx-1 px-1">
           {photos.map((u, i) => (
             <div key={`m${i}`} className="relative shrink-0">
-              <img
+              <MediaThumb
                 src={u}
                 className="w-14 h-14 rounded-lg object-cover border-2 border-pink-500/30"
                 alt="mission proof"
@@ -593,7 +625,7 @@ function BarCard({
           ))}
           {otherPhotos.map((u, i) => (
             <div key={`o${i}`} className="shrink-0">
-              <img
+              <MediaThumb
                 src={u}
                 className="w-14 h-14 rounded-lg object-cover border-2 border-purple-500/30 opacity-70"
                 alt="other team"
@@ -602,7 +634,7 @@ function BarCard({
           ))}
           {receipts.map((u, i) => (
             <div key={`r${i}`} className="relative shrink-0">
-              <img
+              <MediaThumb
                 src={u}
                 className="w-14 h-14 rounded-lg object-cover border border-white/15"
                 alt="receipt"
@@ -759,7 +791,7 @@ function SharedAlbum({
       ) : (
         <div className="grid grid-cols-3 gap-1.5">
           {albumPhotos.map((url, i) => (
-            <img
+            <MediaThumb
               key={i}
               src={url}
               className="w-full aspect-square rounded-lg object-cover border border-white/10"
@@ -1030,7 +1062,7 @@ export default function Home() {
           </p>
           <div className="flex gap-2 overflow-x-auto px-5 pb-2 snap-x snap-mandatory">
             {(albumPhotos ?? []).slice().reverse().map((url, i) => (
-              <img
+              <MediaThumb
                 key={i}
                 src={url}
                 className="w-40 h-40 rounded-xl object-cover border border-white/10 shrink-0 snap-start"
